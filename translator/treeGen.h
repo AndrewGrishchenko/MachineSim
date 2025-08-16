@@ -1,15 +1,15 @@
 #ifndef _TREE_GEN_H
 #define _TREE_GEN_H
 
-#include <string>
-#include <sstream>
-#include <vector>
 #include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
 
 #include "ASTNode.hpp"
 #include "semanticAnalyzer.h"
 
-enum class TokenType {
+enum class TokenType : uint8_t {
     // Keywords
     KeywordIf,
     KeywordElse,
@@ -55,14 +55,14 @@ enum class TokenType {
     LogicGreaterEqual,
     LogicLess,
     LogicLessEqual,
-    
+
     // Operators
     Plus,
     Minus,
     Multiply,
     Divide,
     Rem,
-    
+
     // Utility
     EndOfFile,
     Unknown
@@ -72,63 +72,58 @@ struct Token {
     TokenType type;
     std::string value;
 
-    Token(TokenType type, std::string value)
-        : type(type), value(value) { }
+    Token(TokenType type, std::string value) : type(type), value(std::move(value)) {
+    }
 };
 
 class TreeGenerator {
-    public:
-        TreeGenerator();
-        ~TreeGenerator();
+public:
+    TreeGenerator() = default;
 
-        ASTNode* makeTree(std::string data);
+    std::unique_ptr<ASTNode> makeTree(const std::string& data);
 
-    private:
-        std::vector<Token> tokenize(const std::string& input);
+private:
+    static std::vector<Token> tokenize(const std::string& input);
 
-        ASTNode* parseVarStatement(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseAssignStatement(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseBlock(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseVarStatement(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseAssignStatement(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseBlock(std::vector<Token> tokens, size_t& pos);
 
-        ASTNode* parseStatement(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseIf(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseWhile(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseBreak(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseStatement(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseIf(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseWhile(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseBreak(std::vector<Token> tokens, size_t& pos);
 
-        ASTNode* parseParameter(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseFunction(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseCallParameter(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseFunctionCall(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseReturn(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseParameter(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseFunction(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseFunctionCall(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseReturn(std::vector<Token> tokens, size_t& pos);
 
-        ASTNode* parseExpression(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseArray(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseArrayGet(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseArraySize(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseMethodCall(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseTerm(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseFactor(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseExpression(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseArray(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseArrayGet(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseMethodCall(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseTerm(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseFactor(std::vector<Token> tokens, size_t& pos);
 
-        ASTNode* parseLogicOr(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseLogicAnd(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseEquality(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseComparsion(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parseUnary(std::vector<Token> tokens, size_t& pos);
-        ASTNode* parsePrimary(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseLogicOr(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseLogicAnd(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseEquality(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseComparsion(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parseUnary(std::vector<Token> tokens, size_t& pos);
+    std::unique_ptr<ASTNode> parsePrimary(std::vector<Token> tokens, size_t& pos);
 
-        std::string tokenStr(Token token);
+    static std::string tokenStr(const Token& token);
 
-        bool isAlpha(char c) {
-            return std::isalpha(static_cast<unsigned char>(c)) || c == '_';
-        }
-
-        bool isDigit(char c) {
-            return std::isdigit(static_cast<unsigned char>(c));
-        }
-
-        bool isAlnum(char c) {
-            return isAlpha(c) || isDigit(c);
-        }
+    static bool isAlpha(char character) {
+        return std::isalpha(static_cast<unsigned char>(character)) != 0 || character == '_';
+    }
+    static bool isDigit(char character) {
+        return std::isdigit(static_cast<unsigned char>(character)) != 0;
+    }
+    static bool isAlnum(char character) {
+        return isAlpha(character) || isDigit(character);
+    }
 };
 
 #endif

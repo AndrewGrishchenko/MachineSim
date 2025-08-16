@@ -1,22 +1,18 @@
 #pragma once
 
+#include <algorithm>
+#include <cstdint>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
-#include <algorithm>
-#include <cctype>
 
-enum InputMode {
-    NONE,
-    MODE_TOKEN,
-    MODE_STREAM
-};
+enum InputMode : uint8_t { NONE, MODE_TOKEN, MODE_STREAM };
 
 struct MachineConfig {
     std::string input_file;
-    InputMode input_mode = InputMode::NONE;
-    size_t schedule_start = -1;
+    InputMode input_mode   = InputMode::NONE;
+    size_t schedule_start  = -1;
     size_t schedule_offset = -1;
     std::string output_file;
     std::string log_file;
@@ -24,39 +20,46 @@ struct MachineConfig {
     std::string log_hash_file;
 };
 
-inline std::string trim(const std::string& s) {
-    size_t start = s.find_first_not_of(" \t\r\n");
-    size_t end = s.find_last_not_of(" \t\r\n");
-    return (start == std::string::npos) ? "" : s.substr(start, end - start + 1);
+inline auto trim(const std::string& val) -> std::string {
+    size_t start = val.find_first_not_of(" \t\r\n");
+    size_t end   = val.find_last_not_of(" \t\r\n");
+    return (start == std::string::npos) ? "" : val.substr(start, end - start + 1);
 }
 
-inline std::string unquote(const std::string& s) {
-    if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
-        return s.substr(1, s.size() - 2);
-    return s;
+inline auto unquote(const std::string& val) -> std::string {
+    if (val.size() >= 2 && val.front() == '"' && val.back() == '"') {
+        return val.substr(1, val.size() - 2);
+    }
+    return val;
 }
 
-inline MachineConfig parseConfig(std::string fileName) {
-    std::ifstream in(fileName);
-    if (!in.is_open()) {
+inline auto parseConfig(const std::string& fileName) -> MachineConfig {
+    std::ifstream inFile(fileName);
+    if (!inFile.is_open()) {
         throw std::runtime_error("Failed to open config file: " + fileName);
     }
 
     MachineConfig config;
     std::string line;
-    while (std::getline(in, line)) {
+    while (std::getline(inFile, line)) {
         size_t colon = line.find(':');
-        if (colon == std::string::npos) continue;
+        if (colon == std::string::npos) {
+            continue;
+        }
 
-        std::string key = trim(line.substr(0, colon));
+        std::string key   = trim(line.substr(0, colon));
         std::string value = unquote(trim(line.substr(colon + 1)));
 
         if (key == "input_file") {
             config.input_file = value;
         } else if (key == "input_mode") {
-            if (value == "token") config.input_mode = InputMode::MODE_TOKEN;
-            else if (value == "stream") config.input_mode = InputMode::MODE_STREAM;
-            else throw std::runtime_error("Invalid input_mode: " + value);
+            if (value == "token") {
+                config.input_mode = InputMode::MODE_TOKEN;
+            } else if (value == "stream") {
+                config.input_mode = InputMode::MODE_STREAM;
+            } else {
+                throw std::runtime_error("Invalid input_mode: " + value);
+            }
         } else if (key == "schedule_start") {
             config.schedule_start = std::stoi(value);
         } else if (key == "schedule_offset") {
@@ -73,6 +76,6 @@ inline MachineConfig parseConfig(std::string fileName) {
             throw std::runtime_error("Unknown config key: " + key);
         }
     }
-    
+
     return config;
 }

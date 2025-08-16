@@ -1,10 +1,9 @@
 #include "processorModel.h"
 
-ProcessorModel::ProcessorModel(MachineConfig cfg)
-    : cfg(cfg) {
+ProcessorModel::ProcessorModel(MachineConfig& cfg) : cfg(cfg) {
     parseInput();
     iosim.connectOutput(outputFile);
-    
+
     mux1.addInput(zero);
     mux1.addInput(registers.getRef(Registers::ACC));
     mux1.addInput(zero);
@@ -17,14 +16,11 @@ ProcessorModel::ProcessorModel(MachineConfig cfg)
 
     alu.setLeftInputGetter(mux1.makeGetter());
     alu.setRightInputGetter(mux2.makeGetter());
-    alu.setFlagRefs(registers.getNRef(),
-                    registers.getZRef(),
-                    registers.getVRef(),
-                    registers.getCRef());
+    alu.connectFlags(registers.getFlags());
 
     latchALU_AC.setSource(alu.getResultRef());
     latchALU_AC.setTarget(registers.getRef(Registers::ACC));
-    
+
     latchALU_AR.setSource(alu.getResultRef());
     latchALU_AR.setTarget(registers.getRef(Registers::AR));
 
@@ -33,17 +29,18 @@ ProcessorModel::ProcessorModel(MachineConfig cfg)
 
     latchALU_PC.setSource(alu.getResultRef());
     latchALU_PC.setTarget(registers.getRef(Registers::IP));
-    
+
     latchALU_SP.setSource(alu.getResultRef());
     latchALU_SP.setTarget(registers.getRef(Registers::SP));
 
     latchALU_SPC.setSource(alu.getResultRef());
     latchALU_SPC.setTarget(interruptHandler.getSPCRef());
 
-    latchRouter.setLatches(latchALU_AC, latchALU_AR, latchALU_DR, latchALU_PC, latchALU_SP, latchALU_SPC);
+    latchRouter.setLatches(latchALU_AC, latchALU_AR, latchALU_DR, latchALU_PC, latchALU_SP,
+                           latchALU_SPC);
 
     auto memoryGetter = [this]() -> uint32_t& {
-        return this->memory.atRef(this->registers.getRef(Registers::AR));
+        return this->memory.at(this->registers.getRef(Registers::AR));
     };
 
     latchMEM_IR.setSourceGetter(memoryGetter);
@@ -61,40 +58,42 @@ ProcessorModel::ProcessorModel(MachineConfig cfg)
     latchVec_PC.setTarget(registers.getRef(Registers::IP));
 
     interruptHandler.connect(latchALU_SPC, latchSPC_PC, latchVec_PC);
-    
+
     iosim.connect(interruptHandler, memory);
 
     cu.setLog(logChunk);
-    cu.connect(interruptHandler, mux1, mux2, alu, latchRouter, latchMEM_IR, latchMEM_DR, latchDR_MEM);
-    cu.setFlagsInput(registers.getNRef(),
-                     registers.getZRef(),
-                     registers.getVRef(),
-                     registers.getCRef());
+    cu.connect(interruptHandler, mux1, mux2, alu, latchRouter, latchMEM_IR, latchMEM_DR,
+               latchDR_MEM);
+    cu.connectFlags(registers.getFlags());
     cu.setIRInput(registers.getRef(Registers::IR));
 
-    if (!cfg.output_file.empty())
+    if (!cfg.output_file.empty()) {
         outputFile.open(cfg.output_file, std::ios::out);
+    }
 
-    if (!cfg.log_file.empty())
+    if (!cfg.log_file.empty()) {
         logFile.open(cfg.log_file, std::ios::out);
+    }
 
-    if (!cfg.binary_repr_file.empty())
+    if (!cfg.binary_repr_file.empty()) {
         binaryReprFile.open(cfg.binary_repr_file, std::ios::out);
+    }
 
-    if (!cfg.log_hash_file.empty())
+    if (!cfg.log_hash_file.empty()) {
         logHashFile.open(cfg.log_hash_file, std::ios::out);
+    }
 }
 
-ProcessorModel::~ProcessorModel() { }
-
-bool ProcessorModel::isNumberArray(const std::string& s) {
-    std::istringstream iss(s);
+bool ProcessorModel::isNumberArray(const std::string& val) {
+    std::istringstream iss(val);
     std::string token;
     while (iss >> token) {
         try {
-            size_t idx;
+            size_t idx = 0;
             std::stoi(token, &idx);
-            if (idx != token.size()) return false;
+            if (idx != token.size()) {
+                return false;
+            }
         } catch (...) {
             return false;
         }
@@ -112,44 +111,60 @@ std::vector<int> ProcessorModel::parseStreamLine(const std::string& line) {
             result.push_back(std::stoi(token));
         }
     } else {
-        for (char c : line) {
-            result.push_back(static_cast<unsigned char>(c));
+        for (char character : line) {
+            result.push_back(static_cast<unsigned char>(character));
         }
     }
     return result;
 }
 
+std::vector<int> ProcessorModel::parseTokenStr(const std::string& tokenStr) {
+    if (tokenStr == "\\n") {
+        return {'\n'};
+    }
+    if (tokenStr == "\\t") {
+        return {'\t'};
+    }
+
+    if (tokenStr.size() == 3 && tokenStr.front() == '\'' && tokenStr.back() == '\'') {
+        return {tokenStr[1]};
+    }
+
+    try {
+        size_t idx = 0;
+        int val    = std::stoi(tokenStr, &idx);
+        if (idx == tokenStr.size()) {
+            return {val};
+        }
+    } catch (...) {
+    }
+
+    std::vector<int> result;
+    for (char character : tokenStr) {
+        result.push_back(static_cast<unsigned char>(character));
+    }
+    return result;
+};
+
 void ProcessorModel::parseInput() {
-    if (cfg.input_file.empty()) return;
+    if (cfg.input_file.empty()) {
+        return;
+    }
     std::ifstream inputFile(cfg.input_file);
-    if (!inputFile.is_open()) throw std::runtime_error("Unable to open " + cfg.input_file);
-    if (cfg.input_mode == InputMode::NONE) throw std::runtime_error("input_mode not specified");
-
-    auto parseTokenStr = [](const std::string& tokenStr) -> std::vector<int> {
-        if (tokenStr == "\\n") return { '\n' };
-        if (tokenStr == "\\t") return { '\t' };
-
-        if (tokenStr.size() == 3 && tokenStr.front() == '\'' && tokenStr.back() == '\'') {
-            return { tokenStr[1] };
-        }
-
-        try {
-            size_t idx = 0;
-            int val = std::stoi(tokenStr, &idx);
-            if (idx == tokenStr.size())
-                return { val };
-        } catch (...) {
-        }
-
-        std::vector<int> result;
-        for (char ch : tokenStr)
-            result.push_back(static_cast<unsigned char>(ch));
-        return result;
-    };
+    if (!inputFile.is_open()) {
+        throw std::runtime_error("Unable to open " + cfg.input_file);
+    }
+    if (cfg.input_mode == InputMode::NONE) {
+        throw std::runtime_error("input_mode not specified");
+    }
 
     if (cfg.input_mode == InputMode::MODE_STREAM) {
-        if (cfg.schedule_start == -1) throw std::runtime_error("schedule_start not specified");
-        if (cfg.schedule_offset == -1) throw std::runtime_error("schedule_offset not specified");
+        if (cfg.schedule_start == -1) {
+            throw std::runtime_error("schedule_start not specified");
+        }
+        if (cfg.schedule_offset == -1) {
+            throw std::runtime_error("schedule_offset not specified");
+        }
 
         size_t currentTick = cfg.schedule_start;
 
@@ -157,8 +172,8 @@ void ProcessorModel::parseInput() {
         buffer << inputFile.rdbuf();
         std::string data = buffer.str();
 
-        for (const auto& ch : data) {
-            iosim.addInput({currentTick, static_cast<int>(ch)});
+        for (const auto& character : data) {
+            iosim.addInput({currentTick, static_cast<int>(character)});
             currentTick += cfg.schedule_offset;
         }
 
@@ -166,14 +181,17 @@ void ProcessorModel::parseInput() {
     } else if (cfg.input_mode == InputMode::MODE_TOKEN) {
         std::string line;
         while (std::getline(inputFile, line)) {
-            if (line.empty()) continue;
+            if (line.empty()) {
+                continue;
+            }
 
             std::istringstream iss(line);
-            size_t tick;
+            size_t tick = 0;
             std::string tokenStr;
 
-            if (!(iss >> tick >> tokenStr))
+            if (!(iss >> tick >> tokenStr)) {
                 throw std::runtime_error("Input file parse error");
+            }
 
             auto values = parseTokenStr(tokenStr);
             for (int val : values) {
@@ -184,10 +202,11 @@ void ProcessorModel::parseInput() {
 }
 
 void ProcessorModel::process() {
-    if (!binaryLoaded)
+    if (!binaryLoaded) {
         throw std::runtime_error("Binary not loaded");
+    }
 
-    while(!cu.isHalted()) {
+    while (!cu.isHalted()) {
         tick();
         tickCount++;
     }
@@ -196,120 +215,127 @@ void ProcessorModel::process() {
 
     if (!cfg.output_file.empty()) {
         outputFile.close();
-        std::cout << "Wrote output to " << cfg.output_file << std::endl;
+        std::cout << "Wrote output to " << cfg.output_file << "\n";
     }
 
     if (!cfg.log_file.empty()) {
         logFile << memDump();
         logFile.close();
-        std::cout << "Wrote log to " << cfg.log_file << std::endl;
+        std::cout << "Wrote log to " << cfg.log_file << "\n";
     }
 
     if (!cfg.binary_repr_file.empty()) {
         binaryReprFile.close();
-        std::cout << "Wrote binary representation to " << cfg.binary_repr_file << std::endl;
+        std::cout << "Wrote binary representation to " << cfg.binary_repr_file << "\n";
     }
 
     if (!cfg.log_hash_file.empty()) {
         logHashFile << std::hex << hasher.final();
         logHashFile.close();
-        std::cout << "Wrote log hash to " << cfg.log_hash_file << std::endl;
+        std::cout << "Wrote log hash to " << cfg.log_hash_file << "\n";
     }
 }
 
+uint32_t ProcessorModel::read_uint32(std::ifstream& inFile) {
+    std::array<uint8_t, 4> buf{};
+
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    if (!inFile.read(reinterpret_cast<char*>(buf.data()), buf.size())) {
+        throw std::runtime_error("Failed to read 4 bytes");
+    }
+
+    return (static_cast<uint32_t>(buf[0]) << BITS_24) | (static_cast<uint32_t>(buf[1]) << BITS_16) |
+           (static_cast<uint32_t>(buf[2]) << BITS_8) | (static_cast<uint32_t>(buf[3]));
+}
+
 void ProcessorModel::loadBinary(const std::string& filename) {
-    std::ifstream in(filename, std::ios::binary);
-    if (!in) throw std::runtime_error("Can't open binary file: " + filename);
+    std::ifstream inFile(filename, std::ios::binary);
+    if (!inFile) {
+        throw std::runtime_error("Can't open binary file: " + filename);
+    }
 
-    uint8_t buf[4];
+    std::array<uint8_t, 4> buf{};
 
-    if (!in.read(reinterpret_cast<char*>(buf), 4))
-        throw std::runtime_error("Failed to read textSize from header");
-    size_t textSize = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
+    size_t textSize = read_uint32(inFile);
+    size_t dataSize = read_uint32(inFile);
 
-    if (!in.read(reinterpret_cast<char*>(buf), 4))
-        throw std::runtime_error("Failed to read dataSize from header");
-    size_t dataSize = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
-
-    if (textSize + dataSize > MEM_SIZE)
+    if (textSize + dataSize > MEM_SIZE) {
         throw std::runtime_error("Binary too large for memory");
+    }
 
     for (size_t addr = 0; addr < textSize; addr++) {
-        if (!in.read(reinterpret_cast<char*>(buf), 4))
-            throw std::runtime_error("Unexpected EOF while reading instructions");
-        memory[addr] = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
+        memory[addr] = read_uint32(inFile);
 
-        if (memory[addr] == 0) continue;
+        if (memory[addr] == 0) {
+            continue;
+        }
 
-        uint8_t opcode = (memory[addr] >> 24) & 0xFF;
-        uint32_t operand = memory[addr] & 0xFFFFFF;
+        uint8_t opcode   = (memory[addr] >> BITS_24) & FULL_MASK_8;
+        uint32_t operand = memory[addr] & FULL_MASK_24;
 
-        binaryReprFile << std::dec << std::setw(4) << std::setfill('0') << addr << " - " 
-                       << std::hex << std::uppercase << std::setw(8) << std::setfill('0') << memory[addr] << " - "
-                       << CU::opcodeStr(opcode)
+        binaryReprFile << std::dec << std::setw(4) << std::setfill('0') << addr << " - " << std::hex
+                       << std::uppercase << std::setw(BITS_8) << std::setfill('0') << memory[addr]
+                       << " - " << CU::opcodeStr(opcode)
                        << (CU::hasOperand(opcode) ? (" " + std::to_string(operand)) : "")
                        << ((addr < textSize - 1) ? "\n" : "");
     }
 
     for (size_t addr = textSize; addr < textSize + dataSize; addr++) {
-        if (!in.read(reinterpret_cast<char*>(buf), 4))
-            throw std::runtime_error("Unexpected EOF while reading data");
-        memory[addr] = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
+        memory[addr] = read_uint32(inFile);
     }
 
-    this->textSize = textSize;
-    this->dataSize = dataSize;
+    this->textSize  = textSize;
+    this->dataSize  = dataSize;
     this->dataStart = textSize;
 
     binaryLoaded = true;
 
     uint32_t defaultVector = memory[dataStart + 0];
-    uint32_t inputVector = memory[dataStart + 1];
+    uint32_t inputVector   = memory[dataStart + 1];
 
     interruptHandler.setVectorTable(defaultVector, inputVector);
 }
 
-
 std::string ProcessorModel::memDump() {
-    std::ostringstream os;
-    os << "MEMDUMP:\n";
-    os << "textSize: " << std::hex << textSize << std::dec << std::endl;
-    os << "dataSize: " << std::hex << dataSize << std::dec << std::endl;
+    std::ostringstream oss;
+    oss << "MEMDUMP:\n";
+    oss << "textSize: " << std::hex << textSize << std::dec << "\n";
+    oss << "dataSize: " << std::hex << dataSize << std::dec << "\n";
     size_t address = 0;
     while (address < textSize + dataSize) {
-        os << "MEM[" << std::hex << address << "] = 0x" << memory[address++] << std::dec << "\n";
+        oss << "MEM[" << std::hex << address << "] = 0x" << memory[address++] << std::dec << "\n";
     }
 
-    address = 0x7FFFF;
-    int count = 5;
-    while (count >= 0) {
-        os << "MEM[" << std::hex << address << "] = 0x" << memory[address--] << std::dec << "\n";
-        count--;
-    }
+    // address = 0x7FFFF;
+    // int count = 5;
+    // while (count >= 0) {
+    //     oss << "MEM[" << std::hex << address << "] = 0x" << memory[address--] << std::dec <<
+    //     "\n"; count--;
+    // }
 
-    os << "\n";
-    return os.str();
+    oss << "\n";
+    return oss.str();
 }
 
 std::string ProcessorModel::registerDump() {
     std::ostringstream result;
     result << std::hex;
-    result << "AC: 0x" << registers.get(Registers::ACC) << std::endl;
-    result << "IR: 0x" << registers.get(Registers::IR) << std::endl;
-    result << "AR: 0x" << registers.get(Registers::AR) << std::endl;
-    result << "DR: 0x" << registers.get(Registers::DR) << std::endl;
-    result << "PC: 0x" << registers.get(Registers::IP) << std::endl;
-    result << "SP: 0x" << registers.get(Registers::SP) << std::endl;
-    result << "NZVC: " << registers.getN()
-                       << registers.getZ()
-                       << registers.getV()
-                       << registers.getC() << std::endl;
+    result << "AC: 0x" << registers.get(Registers::ACC) << "\n";
+    result << "IR: 0x" << registers.get(Registers::IR) << "\n";
+    result << "AR: 0x" << registers.get(Registers::AR) << "\n";
+    result << "DR: 0x" << registers.get(Registers::DR) << "\n";
+    result << "PC: 0x" << registers.get(Registers::IP) << "\n";
+    result << "SP: 0x" << registers.get(Registers::SP) << "\n";
+
+    FlagsRegister* flags = registers.getFlags().get();
+
+    result << "NZVC: " << flags->N << flags->Z << flags->V << flags->C << "\n";
     return result.str();
 }
 
 void ProcessorModel::tick() {
     logChunk = "tick #" + std::to_string(tickCount) + "\n";
-    
+
     iosim.check(tickCount);
     cu.decode();
 
@@ -321,7 +347,6 @@ void ProcessorModel::tick() {
     latchDR_MEM.propagate();
     alu.perform();
     latchRouter.propagate();
-    
 
     latchSPC_PC.setEnabled(false);
     latchVec_PC.setEnabled(false);
@@ -334,8 +359,12 @@ void ProcessorModel::tick() {
     latchRouter.setLatchStates({0, 0, 0, 0, 0, 0});
 
     logChunk += registerDump() + "\n";
-    if (!cfg.log_hash_file.empty()) hasher.update(logChunk.data(), logChunk.size());
-    if (!cfg.log_file.empty()) logFile << logChunk;
+    if (!cfg.log_hash_file.empty()) {
+        hasher.update(logChunk.data(), logChunk.size());
+    }
+    if (!cfg.log_file.empty()) {
+        logFile << logChunk;
+    }
 }
 
 void InterruptHandler::step() {
@@ -353,8 +382,8 @@ void InterruptHandler::step() {
                     break;
                 case InterruptState::Restoring:
                     latchSPC_PC->setEnabled(true);
-                    ipc = false;
-                    irq = IRQType::NONE;
+                    ipc      = false;
+                    irq      = IRQType::NONE;
                     intState = InterruptState::SavingPC;
                     break;
             }
@@ -368,21 +397,22 @@ void InterruptHandler::step() {
 
 void CU::decode() {
     log("State " + stateStr());
-    
-    if ((interruptHandler->shouldInterrupt() || interruptHandler->isEnteringInterrupt()) && state == CPUState::FetchAR) {
+
+    if ((interruptHandler->shouldInterrupt() || interruptHandler->isEnteringInterrupt()) &&
+        state == CPUState::FetchAR) {
         interruptHandler->step();
         return;
     }
 
-    switch(state) {
+    switch (state) {
         case CPUState::FetchAR: {
             mux1->select(3);
             mux2->select(0);
 
             alu->setOperation(ALU::Operation::NOP);
-            
-            latchRouter->setLatchState(1, 1);
-            
+
+            latchRouter->setLatchState(latchAR_index, 1);
+
             state = CPUState::FetchIR;
             break;
         }
@@ -393,13 +423,13 @@ void CU::decode() {
             break;
         }
         case CPUState::Decode: {
-            opcode = ((*IR) >> 24) & 0xFF;
-            operand = (*IR) & 0xFFFFFF;
+            opcode  = ((*IR) >> BITS_24) & FULL_MASK_8;
+            operand = (*IR) & FULL_MASK_24;
 
             instructionTick();
             if (instructionDone) {
                 instructionDone = false;
-                state = CPUState::IncrementIP;
+                state           = CPUState::IncrementIP;
             }
 
             break;
@@ -409,9 +439,9 @@ void CU::decode() {
             mux2->select(0);
 
             alu->setOperation(ALU::Operation::INC);
-            
-            latchRouter->setLatchState(3, 1);
-            
+
+            latchRouter->setLatchState(latchPC_index, 1);
+
             state = CPUState::FetchAR;
             break;
         }
@@ -421,10 +451,13 @@ void CU::decode() {
     }
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void CU::instructionTick() {
     log("Instruction step #" + std::to_string(microstep));
-    
-    switch(opcode) {
+
+    auto* flags = flagsWeakPtr.lock().get();
+
+    switch (opcode) {
         case OP_ADD:
         case OP_SUB:
         case OP_DIV:
@@ -436,9 +469,9 @@ void CU::instructionTick() {
                     mux2->select(0);
 
                     alu->setOperation(ALU::Operation::NOP);
-                    
-                    latchRouter->setLatchState(1, 1);
-                    
+
+                    latchRouter->setLatchState(latchAR_index, 1);
+
                     microstep++;
                     break;
                 case 1:
@@ -452,40 +485,42 @@ void CU::instructionTick() {
                     mux2->select(2);
 
                     alu->setWriteFlags(true);
-                    if (opcode == OP_ADD)
+                    if (opcode == OP_ADD) {
                         alu->setOperation(ALU::Operation::ADD);
-                    else if (opcode == OP_SUB)
+                    } else if (opcode == OP_SUB) {
                         alu->setOperation(ALU::Operation::SUB);
-                    else if (opcode == OP_DIV)
+                    } else if (opcode == OP_DIV) {
                         alu->setOperation(ALU::Operation::DIV);
-                    else if (opcode == OP_MUL)
+                    } else if (opcode == OP_MUL) {
                         alu->setOperation(ALU::Operation::MUL);
-                    else if (opcode == OP_REM)
+                    } else if (opcode == OP_REM) {
                         alu->setOperation(ALU::Operation::REM);
+                    }
 
-                    latchRouter->setLatchState(0, 1);
+                    latchRouter->setLatchState(latchAC_index, 1);
 
-                    microstep = 0;
+                    microstep       = 0;
                     instructionDone = true;
                     break;
             }
             break;
-        
+
         case OP_INC:
         case OP_DEC:
         case OP_NOT:
             mux1->select(1);
             mux2->select(0);
-            
-            alu->setWriteFlags(true);
-            if (opcode == OP_INC)
-                alu->setOperation(ALU::Operation::INC);
-            else if (opcode == OP_DEC)
-                alu->setOperation(ALU::Operation::DEC);
-            else if (opcode == OP_NOT)
-                alu->setOperation(ALU::Operation::NOT);
 
-            latchRouter->setLatchState(0, 1);
+            alu->setWriteFlags(true);
+            if (opcode == OP_INC) {
+                alu->setOperation(ALU::Operation::INC);
+            } else if (opcode == OP_DEC) {
+                alu->setOperation(ALU::Operation::DEC);
+            } else if (opcode == OP_NOT) {
+                alu->setOperation(ALU::Operation::NOT);
+            }
+
+            latchRouter->setLatchState(latchAC_index, 1);
 
             instructionDone = true;
             break;
@@ -496,7 +531,7 @@ void CU::instructionTick() {
 
             alu->setOperation(ALU::Operation::NOP);
 
-            latchRouter->setLatchState(0, 1);
+            latchRouter->setLatchState(latchAC_index, 1);
 
             instructionDone = true;
             break;
@@ -507,7 +542,7 @@ void CU::instructionTick() {
 
             alu->setOperation(ALU::Operation::DEC);
 
-            latchRouter->setLatchState(3, 1);
+            latchRouter->setLatchState(latchPC_index, 1);
 
             instructionDone = true;
             break;
@@ -519,9 +554,9 @@ void CU::instructionTick() {
                     mux2->select(0);
 
                     alu->setOperation(ALU::Operation::NOP);
-                    
-                    latchRouter->setLatchState(1, 1);
-                    
+
+                    latchRouter->setLatchState(latchAR_index, 1);
+
                     microstep++;
                     break;
                 case 1:
@@ -535,7 +570,7 @@ void CU::instructionTick() {
                     alu->setWriteFlags(true);
                     alu->setOperation(ALU::Operation::SUB);
 
-                    microstep = 0;
+                    microstep       = 0;
                     instructionDone = true;
                     break;
             }
@@ -545,8 +580,8 @@ void CU::instructionTick() {
             mux1->select(2);
             mux2->select(0);
 
-            if (*Z) {
-                latchRouter->setLatchState(3, 1);
+            if (flags->Z) {
+                latchRouter->setLatchState(latchPC_index, 1);
                 alu->setOperation(ALU::Operation::DEC);
             } else {
                 latchRouter->setLatchStates({0, 0, 0, 0, 0, 0});
@@ -560,8 +595,8 @@ void CU::instructionTick() {
             mux1->select(2);
             mux2->select(0);
 
-            if (!*Z) {
-                latchRouter->setLatchState(3, 1);
+            if (!flags->Z) {
+                latchRouter->setLatchState(latchPC_index, 1);
                 alu->setOperation(ALU::Operation::DEC);
             } else {
                 latchRouter->setLatchStates({0, 0, 0, 0, 0, 0});
@@ -570,13 +605,13 @@ void CU::instructionTick() {
 
             instructionDone = true;
             break;
-        
+
         case OP_JG:
             mux1->select(2);
             mux2->select(0);
 
-            if (!*Z && *N == *V) {
-                latchRouter->setLatchState(3, 1);
+            if (!flags->Z && flags->N == flags->V) {
+                latchRouter->setLatchState(latchPC_index, 1);
                 alu->setOperation(ALU::Operation::DEC);
             } else {
                 latchRouter->setLatchStates({0, 0, 0, 0, 0, 0});
@@ -590,8 +625,8 @@ void CU::instructionTick() {
             mux1->select(2);
             mux2->select(0);
 
-            if (*N == *V) {
-                latchRouter->setLatchState(3, 1);
+            if (flags->N == flags->V) {
+                latchRouter->setLatchState(latchPC_index, 1);
                 alu->setOperation(ALU::Operation::DEC);
             } else {
                 latchRouter->setLatchStates({0, 0, 0, 0, 0, 0});
@@ -605,8 +640,8 @@ void CU::instructionTick() {
             mux1->select(2);
             mux2->select(0);
 
-            if (*N != *V) {
-                latchRouter->setLatchState(3, 1);
+            if (flags->N != flags->V) {
+                latchRouter->setLatchState(latchPC_index, 1);
                 alu->setOperation(ALU::Operation::DEC);
             } else {
                 latchRouter->setLatchStates({0, 0, 0, 0, 0, 0});
@@ -620,8 +655,8 @@ void CU::instructionTick() {
             mux1->select(2);
             mux2->select(0);
 
-            if (*Z || *N != *V) {
-                latchRouter->setLatchState(3, 1);
+            if (flags->Z || flags->N != flags->V) {
+                latchRouter->setLatchState(latchPC_index, 1);
                 alu->setOperation(ALU::Operation::DEC);
             } else {
                 latchRouter->setLatchStates({0, 0, 0, 0, 0, 0});
@@ -635,8 +670,8 @@ void CU::instructionTick() {
             mux1->select(2);
             mux2->select(0);
 
-            if (!*C && !*Z) {
-                latchRouter->setLatchState(3, 1);
+            if (!flags->C && !flags->Z) {
+                latchRouter->setLatchState(latchPC_index, 1);
                 alu->setOperation(ALU::Operation::DEC);
             } else {
                 latchRouter->setLatchStates({0, 0, 0, 0, 0, 0});
@@ -650,8 +685,8 @@ void CU::instructionTick() {
             mux1->select(2);
             mux2->select(0);
 
-            if (!*C) {
-                latchRouter->setLatchState(3, 1);
+            if (!flags->C) {
+                latchRouter->setLatchState(latchPC_index, 1);
                 alu->setOperation(ALU::Operation::DEC);
             } else {
                 latchRouter->setLatchStates({0, 0, 0, 0, 0, 0});
@@ -665,8 +700,8 @@ void CU::instructionTick() {
             mux1->select(2);
             mux2->select(0);
 
-            if (*C) {
-                latchRouter->setLatchState(3, 1);
+            if (flags->C) {
+                latchRouter->setLatchState(latchPC_index, 1);
                 alu->setOperation(ALU::Operation::DEC);
             } else {
                 latchRouter->setLatchStates({0, 0, 0, 0, 0, 0});
@@ -680,8 +715,8 @@ void CU::instructionTick() {
             mux1->select(2);
             mux2->select(0);
 
-            if (*C || *Z) {
-                latchRouter->setLatchState(3, 1);
+            if (flags->C || flags->Z) {
+                latchRouter->setLatchState(latchPC_index, 1);
                 alu->setOperation(ALU::Operation::DEC);
             } else {
                 latchRouter->setLatchStates({0, 0, 0, 0, 0, 0});
@@ -698,8 +733,8 @@ void CU::instructionTick() {
                     mux2->select(3);
 
                     alu->setOperation(ALU::Operation::NOP);
-                    latchRouter->setLatchState(1, 1);
-                    
+                    latchRouter->setLatchState(latchAR_index, 1);
+
                     microstep++;
                     break;
                 case 1:
@@ -707,9 +742,9 @@ void CU::instructionTick() {
                     mux2->select(0);
 
                     alu->setOperation(ALU::Operation::NOP);
-                    
-                    latchRouter->setLatchState(2, 1);
-                    
+
+                    latchRouter->setLatchState(latchDR_index, 1);
+
                     microstep++;
                     break;
                 case 2:
@@ -723,10 +758,10 @@ void CU::instructionTick() {
                     mux2->select(3);
 
                     alu->setOperation(ALU::Operation::DEC);
-                    
-                    latchRouter->setLatchState(4, 1);
-                    
-                    microstep = 0;
+
+                    latchRouter->setLatchState(latchSP_index, 1);
+
+                    microstep       = 0;
                     instructionDone = true;
                     break;
             }
@@ -739,9 +774,9 @@ void CU::instructionTick() {
                     mux2->select(3);
 
                     alu->setOperation(ALU::Operation::INC);
-                    
-                    latchRouter->setLatchState(4, 1);
-                    
+
+                    latchRouter->setLatchState(latchSP_index, 1);
+
                     microstep++;
                     break;
                 case 1:
@@ -749,9 +784,9 @@ void CU::instructionTick() {
                     mux2->select(3);
 
                     alu->setOperation(ALU::Operation::NOP);
-                    
-                    latchRouter->setLatchState(1, 1);
-                    
+
+                    latchRouter->setLatchState(latchAR_index, 1);
+
                     microstep++;
                     break;
                 case 2:
@@ -765,10 +800,10 @@ void CU::instructionTick() {
                     mux2->select(2);
 
                     alu->setOperation(ALU::Operation::NOP);
-                    
-                    latchRouter->setLatchState(0, 1);
-                    
-                    microstep = 0;
+
+                    latchRouter->setLatchState(latchAC_index, 1);
+
+                    microstep       = 0;
                     instructionDone = true;
                     break;
             }
@@ -781,9 +816,9 @@ void CU::instructionTick() {
                     mux2->select(0);
 
                     alu->setOperation(ALU::Operation::NOP);
-                    
-                    latchRouter->setLatchState(1, 1);
-                    
+
+                    latchRouter->setLatchState(latchAR_index, 1);
+
                     microstep++;
                     break;
                 case 1:
@@ -799,9 +834,9 @@ void CU::instructionTick() {
                     alu->setOperation(ALU::Operation::NOP);
                     alu->setWriteFlags(true);
 
-                    latchRouter->setLatchState(0, 1);
+                    latchRouter->setLatchState(latchAC_index, 1);
 
-                    microstep = 0;
+                    microstep       = 0;
                     instructionDone = true;
                     break;
             }
@@ -815,8 +850,8 @@ void CU::instructionTick() {
 
                     alu->setOperation(ALU::Operation::NOP);
 
-                    latchRouter->setLatchState(1, 1);
-                    
+                    latchRouter->setLatchState(latchAR_index, 1);
+
                     microstep++;
                     break;
                 case 1:
@@ -830,9 +865,9 @@ void CU::instructionTick() {
                     mux2->select(2);
 
                     alu->setOperation(ALU::Operation::NOP);
-                    
-                    latchRouter->setLatchState(1, 1);
-                    
+
+                    latchRouter->setLatchState(latchAR_index, 1);
+
                     microstep++;
                     break;
                 case 3:
@@ -847,10 +882,10 @@ void CU::instructionTick() {
 
                     alu->setOperation(ALU::Operation::NOP);
                     alu->setWriteFlags(true);
-                    
-                    latchRouter->setLatchState(0, 1);
-                    
-                    microstep = 0;
+
+                    latchRouter->setLatchState(latchAC_index, 1);
+
+                    microstep       = 0;
                     instructionDone = true;
                     break;
             }
@@ -863,7 +898,7 @@ void CU::instructionTick() {
             alu->setWriteFlags(true);
             alu->setOperation(ALU::Operation::NOP);
 
-            latchRouter->setLatchState(0, 1);
+            latchRouter->setLatchState(latchAC_index, 1);
 
             instructionDone = true;
             break;
@@ -876,8 +911,8 @@ void CU::instructionTick() {
 
                     alu->setOperation(ALU::Operation::NOP);
 
-                    latchRouter->setLatchState(1, 1);
-                    
+                    latchRouter->setLatchState(latchAR_index, 1);
+
                     microstep++;
                     break;
                 case 1:
@@ -885,14 +920,14 @@ void CU::instructionTick() {
                     mux2->select(0);
 
                     alu->setOperation(ALU::Operation::NOP);
-                    
-                    latchRouter->setLatchState(2, 1);
-                    
+
+                    latchRouter->setLatchState(latchDR_index, 1);
+
                     microstep++;
                     break;
                 case 2:
                     latchDR_MEM->setEnabled(true);
-                    microstep = 0;
+                    microstep       = 0;
                     instructionDone = true;
                     break;
             }
@@ -905,9 +940,9 @@ void CU::instructionTick() {
                     mux2->select(0);
 
                     alu->setOperation(ALU::Operation::NOP);
-                    
-                    latchRouter->setLatchState(1, 1);
-                    
+
+                    latchRouter->setLatchState(latchAR_index, 1);
+
                     microstep++;
                     break;
                 case 1:
@@ -922,8 +957,8 @@ void CU::instructionTick() {
 
                     alu->setOperation(ALU::Operation::NOP);
 
-                    latchRouter->setLatchState(1, 1);
-                    
+                    latchRouter->setLatchState(latchAR_index, 1);
+
                     microstep++;
                     break;
                 case 3:
@@ -931,14 +966,14 @@ void CU::instructionTick() {
                     mux2->select(0);
 
                     alu->setOperation(ALU::Operation::NOP);
-                    
-                    latchRouter->setLatchState(2, 1);
-                    
+
+                    latchRouter->setLatchState(latchDR_index, 1);
+
                     microstep++;
                     break;
                 case 4:
                     latchDR_MEM->setEnabled(true);
-                    microstep = 0;
+                    microstep       = 0;
                     instructionDone = true;
                     break;
             }
@@ -951,9 +986,9 @@ void CU::instructionTick() {
                     mux2->select(3);
 
                     alu->setOperation(ALU::Operation::NOP);
-                    
-                    latchRouter->setLatchState(1, 1);
-                    
+
+                    latchRouter->setLatchState(latchAR_index, 1);
+
                     microstep++;
                     break;
                 case 1:
@@ -961,9 +996,9 @@ void CU::instructionTick() {
                     mux2->select(0);
 
                     alu->setOperation(ALU::Operation::NOP);
-                    
-                    latchRouter->setLatchState(2, 1);
-                    
+
+                    latchRouter->setLatchState(latchDR_index, 1);
+
                     microstep++;
                     break;
                 case 2:
@@ -977,9 +1012,9 @@ void CU::instructionTick() {
                     mux2->select(3);
 
                     alu->setOperation(ALU::Operation::DEC);
-                    
-                    latchRouter->setLatchState(4, 1);
-                    
+
+                    latchRouter->setLatchState(latchSP_index, 1);
+
                     microstep++;
                     break;
                 case 4:
@@ -987,10 +1022,10 @@ void CU::instructionTick() {
                     mux2->select(0);
 
                     alu->setOperation(ALU::Operation::DEC);
-                    
-                    latchRouter->setLatchState(3, 1);
-                    
-                    microstep = 0;
+
+                    latchRouter->setLatchState(latchPC_index, 1);
+
+                    microstep       = 0;
                     instructionDone = true;
                     break;
             }
@@ -1003,9 +1038,9 @@ void CU::instructionTick() {
                     mux2->select(3);
 
                     alu->setOperation(ALU::Operation::INC);
-                    
-                    latchRouter->setLatchState(4, 1);
-                    
+
+                    latchRouter->setLatchState(latchSP_index, 1);
+
                     microstep++;
                     break;
                 case 1:
@@ -1013,9 +1048,9 @@ void CU::instructionTick() {
                     mux2->select(3);
 
                     alu->setOperation(ALU::Operation::NOP);
-                    
-                    latchRouter->setLatchState(1, 1);
-                    
+
+                    latchRouter->setLatchState(latchAR_index, 1);
+
                     microstep++;
                     break;
                 case 2:
@@ -1029,10 +1064,10 @@ void CU::instructionTick() {
                     mux2->select(2);
 
                     alu->setOperation(ALU::Operation::NOP);
-                    
-                    latchRouter->setLatchState(3, 1);
-                    
-                    microstep = 0;
+
+                    latchRouter->setLatchState(latchPC_index, 1);
+
+                    microstep       = 0;
                     instructionDone = true;
                     break;
             }
@@ -1040,23 +1075,23 @@ void CU::instructionTick() {
 
         case OP_EI:
             interruptHandler->getIERef() = true;
-            instructionDone = true;
+            instructionDone              = true;
             break;
 
         case OP_DI:
             interruptHandler->getIERef() = false;
-            instructionDone = true;
+            instructionDone              = true;
             break;
 
         case OP_IRET:
             interruptHandler->step();
             alu->setOperation(ALU::Operation::DEC);
-            latchRouter->setLatchState(5, 1);
+            latchRouter->setLatchState(latchSPC_index, 1);
             instructionDone = true;
             break;
 
         case OP_HALT:
-            halted = true;
+            halted          = true;
             instructionDone = true;
             break;
 

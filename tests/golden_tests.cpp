@@ -1,17 +1,20 @@
 #include <gtest/gtest.h>
+
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
-#include <cstdlib>
 #include <string>
 
 namespace fs = std::filesystem;
 
 std::string readFile(const fs::path& path) {
-    std::ifstream in(path);
-    if (!in) throw std::runtime_error("Failed to open file: " + path.string());
+    std::ifstream inFile(path);
+    if (!inFile) {
+        throw std::runtime_error("Failed to open file: " + path.string());
+    }
     std::stringstream buffer;
-    buffer << in.rdbuf();
+    buffer << inFile.rdbuf();
     return buffer.str();
 }
 
@@ -25,54 +28,58 @@ std::string runCommand(const std::string& cmd) {
 
 void runCommandInDir(const std::string& cmd, const fs::path& dir) {
     std::string full = "cd " + dir.string() + " && " + cmd;
-    int ret = std::system(full.c_str());
-    if (ret != 0)
+    int ret          = std::system(full.c_str());
+    if (ret != 0) {
         throw std::runtime_error("Command failed: " + full);
+    }
 }
 
 class GoldenTest : public testing::TestWithParam<std::string> {};
 
 class GoldenTestRunner : public testing::TestWithParam<std::string> {
-    protected:
-        void RunTest(const std::string& category) {
-            std::string caseName = GetParam();
+protected:
+    static void RunTest(const std::string& category) {
+        const std::string& caseName = GetParam();
 
-            fs::path caseDir = fs::path(TEST_CASES_DIR) / category / caseName;
-            fs::path expectedDir = caseDir / "expected";
+        fs::path caseDir     = fs::path(TEST_CASES_DIR) / category / caseName;
+        fs::path expectedDir = caseDir / "expected";
 
-            fs::path configFile = caseDir / "config.cfg";
-            fs::path inputFile = caseDir / "input.txt";
-            fs::path programFile = caseDir / "program.txt";
-            fs::path binaryFile = caseDir / "program.bin";
-            
-            fs::path outputFile = caseDir / "output.txt";
-            fs::path reprFile = caseDir / "repr.txt";
-            fs::path hashFile = caseDir / "hash.txt";
-            
-            fs::path expectedOutputFile = expectedDir / "output.txt";
-            fs::path expectedReprFile = expectedDir / "repr.txt";
-            fs::path expectedHashFile = expectedDir / "hash.txt";
+        fs::path configFile  = caseDir / "config.cfg";
+        fs::path inputFile   = caseDir / "input.txt";
+        fs::path programFile = caseDir / "program.txt";
+        fs::path binaryFile  = caseDir / "program.bin";
 
-            runCommand(std::string(TRANSLATOR_PATH) + " " + programFile.string() + " " + binaryFile.string());
-            runCommandInDir(std::string(MACHINE_PATH) + " " + configFile.string() + " " + binaryFile.string(), caseDir);
+        fs::path outputFile = caseDir / "output.txt";
+        fs::path reprFile   = caseDir / "repr.txt";
+        fs::path hashFile   = caseDir / "hash.txt";
 
-            std::string actualOutput = readFile(outputFile);
-            std::string expectedOutput = readFile(expectedOutputFile);
-            EXPECT_EQ(actualOutput, expectedOutput);
+        fs::path expectedOutputFile = expectedDir / "output.txt";
+        fs::path expectedReprFile   = expectedDir / "repr.txt";
+        fs::path expectedHashFile   = expectedDir / "hash.txt";
 
-            std::string actualRepr = readFile(reprFile);
-            std::string expectedRepr = readFile(expectedReprFile);
-            EXPECT_EQ(actualRepr, expectedRepr);
+        runCommand(std::string(TRANSLATOR_PATH) + " " + programFile.string() + " " +
+                   binaryFile.string());
+        runCommandInDir(
+            std::string(MACHINE_PATH) + " " + configFile.string() + " " + binaryFile.string(),
+            caseDir);
 
-            std::string actualHash = readFile(hashFile);
-            std::string expectedHash = readFile(expectedHashFile);
-            EXPECT_EQ(actualHash, expectedHash);
+        std::string actualOutput   = readFile(outputFile);
+        std::string expectedOutput = readFile(expectedOutputFile);
+        EXPECT_EQ(actualOutput, expectedOutput);
 
-            fs::remove(binaryFile);
-            fs::remove(outputFile);
-            fs::remove(reprFile);
-            fs::remove(hashFile);
-        }
+        std::string actualRepr   = readFile(reprFile);
+        std::string expectedRepr = readFile(expectedReprFile);
+        EXPECT_EQ(actualRepr, expectedRepr);
+
+        std::string actualHash   = readFile(hashFile);
+        std::string expectedHash = readFile(expectedHashFile);
+        EXPECT_EQ(actualHash, expectedHash);
+
+        fs::remove(binaryFile);
+        fs::remove(outputFile);
+        fs::remove(reprFile);
+        fs::remove(hashFile);
+    }
 };
 
 class BasicTests : public GoldenTestRunner {};
@@ -80,6 +87,7 @@ class ControlFlowTests : public GoldenTestRunner {};
 class FunctionTests : public GoldenTestRunner {};
 class AlgoTests : public GoldenTestRunner {};
 
+// clang-format off
 TEST_P(BasicTests, OutputMatchesExpected) {
     RunTest("basics");
 }
@@ -119,3 +127,4 @@ INSTANTIATE_TEST_SUITE_P(Algo, AlgoTests, ::testing::Values(
     "sort",
     "palindrome"
 ));
+// clang-format on

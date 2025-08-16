@@ -1,117 +1,134 @@
 #ifndef _BINARIZER_H
 #define _BINARIZER_H
 
-#include <iostream>
-#include <vector>
+#include <algorithm>
 #include <cstdint>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <ranges>
+#include <sstream>
 #include <unordered_map>
 #include <unordered_set>
-#include <sstream>
-#include <ranges>
-#include <algorithm>
-#include <fstream>
+#include <vector>
 
-#include <iomanip>
+constexpr size_t HEX_VAL = 16;
+constexpr size_t const_5 = 5;
+
+constexpr uint32_t MASK_24 = 0xFFFFFF;
+constexpr uint32_t MASK_8  = 0xFF;
+
+constexpr uint32_t SHIFT_24 = 24;
+constexpr uint32_t SHIFT_16 = 16;
+constexpr uint32_t SHIFT_8  = 8;
 
 class Binarizer {
-    public:
-        Binarizer() { }
+public:
+    Binarizer() = default;
 
-        void parse(const std::string& data);
-        void writeToFile(const std::string& filename) const;
-        void dump();
-    private:
-        struct Instruction {
-            uint8_t opcode;
-            uint32_t operand;
-        };
+    void parse(const std::string& data);
+    void writeToFile(const std::string& filename) const;
 
-        const std::unordered_map<std::string, uint8_t> opcodeMap = {
-            {"add",  0b000001},
-            {"sub",  0b000010},
-            {"div",  0b000011},
-            {"mul",  0b000100},
-            {"rem",  0b000101},
-            {"inc",  0b000110},
-            {"dec",  0b000111},
-            {"not",  0b001000},
-            {"cla",  0b001001},
-            {"jmp",  0b001010},
-            {"cmp",  0b001011},
-            {"jz",   0b001100},
-            {"jnz",  0b001101},
-            {"jg",   0b001110},
-            {"jge",  0b001111},
-            {"jl",   0b010000},
-            {"jle",  0b010001},
-            {"ja",   0b010010},
-            {"jae",  0b010011},
-            {"jb",   0b010100},
-            {"jbe",  0b010101},
-            {"push", 0b010110},
-            {"pop",  0b010111},
-            {"ld",   0b011000},
-            {"lda",  0b011001},
-            {"ldi",  0b011010},
-            {"st",   0b011011},
-            {"sta",  0b011100},
-            {"call", 0b011101},
-            {"ret",  0b011110},
-            {"ei",   0b011111},
-            {"di",   0b100000},
-            {"iret", 0b100001},
-            {"halt", 0b100010}
-        };
+private:
+    struct Instruction {
+        uint8_t opcode;
+        uint32_t operand;
+    };
 
-        enum class Section {None, Text, Data, InterruptTable};
+    // clang-format off
+    // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
+    std::unordered_map<std::string, uint8_t> opcodeMap = {
+        {"add",  0b000001},
+        {"sub",  0b000010},
+        {"div",  0b000011},
+        {"mul",  0b000100},
+        {"rem",  0b000101},
+        {"inc",  0b000110},
+        {"dec",  0b000111},
+        {"not",  0b001000},
+        {"cla",  0b001001},
+        {"jmp",  0b001010},
+        {"cmp",  0b001011},
+        {"jz",   0b001100},
+        {"jnz",  0b001101},
+        {"jg",   0b001110},
+        {"jge",  0b001111},
+        {"jl",   0b010000},
+        {"jle",  0b010001},
+        {"ja",   0b010010},
+        {"jae",  0b010011},
+        {"jb",   0b010100},
+        {"jbe",  0b010101},
+        {"push", 0b010110},
+        {"pop",  0b010111},
+        {"ld",   0b011000},
+        {"lda",  0b011001},
+        {"ldi",  0b011010},
+        {"st",   0b011011},
+        {"sta",  0b011100},
+        {"call", 0b011101},
+        {"ret",  0b011110},
+        {"ei",   0b011111},
+        {"di",   0b100000},
+        {"iret", 0b100001},
+        {"halt", 0b100010}
+    };
+    // clang-format off
+    // NOLINTEND(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
 
-        size_t textStart;
-        size_t dataStart;
+    enum class Section : uint8_t { None, Text, Data, InterruptTable };
 
-        std::vector<uint32_t> dataSection;
-        std::unordered_map<std::string, size_t> dataAddress;
+    size_t textStart = 0;
+    size_t dataStart = 0;
 
-        std::vector<Instruction> instructions;
-        std::unordered_map<std::string, size_t> labelAddress;
+    std::vector<uint32_t> dataSection;
+    std::unordered_map<std::string, size_t> dataAddress;
 
-        static void trim(std::string& s) {
-            size_t start = s.find_first_not_of(" \t\r\n");
-            size_t end = s.find_last_not_of(" \t\r\n");
-            s = (start == std::string::npos) ? "" : s.substr(start, end - start + 1);
+    std::vector<Instruction> instructions;
+    std::unordered_map<std::string, size_t> labelAddress;
+
+    static void trim(std::string& val) {
+        size_t start = val.find_first_not_of(" \t\r\n");
+        size_t end = val.find_last_not_of(" \t\r\n");
+        val = (start == std::string::npos) ? "" : val.substr(start, end - start + 1);
+    }
+
+    static void stripComment(std::string& val) {
+        size_t pos = val.find(';');
+        if (pos != std::string::npos) {
+            val = val.substr(0, pos);
+        }
+    }
+
+    static void toLower(std::string& val) {
+        std::transform(val.begin(), val.end(), val.begin(), ::tolower);
+    }
+
+    static bool isNumber(const std::string& val) {
+        if (val.empty()) {
+            return false;
         }
 
-        static void stripComment(std::string& s) {
-            size_t pos = s.find(';');
-            if (pos != std::string::npos) s = s.substr(0, pos);
+        if (val.size() > 2 && val[0] == '0' && (val[1] == 'x' || val[1] == 'X')) {
+            return std::all_of(val.begin() + 2, val.end(), ::isxdigit);
+        }
+        if (val.size() > 2 && val[0] == '0' && (val[1] == 'b' || val[1] == 'B')) {
+            return std::all_of(val.begin() + 2, val.end(), [](char character) { return character == '0' || character == '1'; });
         }
 
-        static void toLower(std::string& s) {
-            std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+        long start = (val[0] == '-') ? 1 : 0;
+        return std::all_of(val.begin() + start, val.end(), ::isdigit);
+    }
+
+    static long parseNumber(const std::string& val) {
+        if (val.size() > 2 && val.substr(0, 2) == "0x") {
+            return std::stol(val, nullptr, HEX_VAL);
         }
-
-        static bool isNumber(const std::string& s) {
-            if (s.empty()) return false;
-
-            if (s.size() > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
-                return std::all_of(s.begin() + 2, s.end(), ::isxdigit);
-            }
-            if (s.size() > 2 && s[0] == '0' && (s[1] == 'b' || s[1] == 'B')) {
-                return std::all_of(s.begin() + 2, s.end(), [](char c) { return c == '0' || c == '1'; });
-            }
-
-            size_t start = (s[0] == '-') ? 1 : 0;
-            return std::all_of(s.begin() + start, s.end(), ::isdigit);
+        if (val.size() > 2 && val.substr(0, 2) == "0b") {
+            return std::stol(val.substr(2), nullptr, 2);
         }
-
-        static long parseNumber(const std::string& s) {
-            if (s.size() > 2 && s.substr(0, 2) == "0x") {
-                return std::stol(s, nullptr, 16);
-            } else if (s.size() > 2 && s.substr(0, 2) == "0b") {
-                return std::stol(s.substr(2), nullptr, 2);
-            } else {
-                return std::stol(s);
-            }
-        }
+        return std::stol(val);
+    }
 };
 
 #endif

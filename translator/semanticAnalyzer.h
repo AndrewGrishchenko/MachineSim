@@ -1,102 +1,104 @@
 #ifndef _SEMANTIC_ANALYZER_H
 #define _SEMANTIC_ANALYZER_H
 
-#include <iostream>
-#include <unordered_map>
-#include <string>
 #include <algorithm>
+#include <iostream>
+#include <string>
+#include <unordered_map>
 
 #include "ASTNode.hpp"
 #include "ASTVisitor.hpp"
 
 class SemanticAnalyzer : ASTVisitor {
-    public:
-        SemanticAnalyzer();
-        ~SemanticAnalyzer();
+public:
+    SemanticAnalyzer() = default;
 
-        void analyze(ASTNode* node);
+    void analyze(ASTNode* node);
 
-        void visit(VarDeclNode& node) override;
-        void visit(NumberLiteralNode& node) override;
-        void visit(CharLiteralNode& node) override;
-        void visit(StringLiteralNode& node) override;
-        void visit(BooleanLiteralNode& node) override;
-        void visit(VoidLiteralNode& node) override;
-        void visit(IntArrayLiteralNode& node) override;
-        void visit(ArrayGetNode& node) override;
-        void visit(MethodCallNode& node) override;
-        void visit(IdentifierNode& node) override;
-        void visit(AssignNode& node) override;
-        void visit(BinaryOpNode& node) override;
-        void visit(UnaryOpNode& node) override;
-        void visit(IfNode& node) override;
-        void visit(WhileNode& node) override;
-        void visit(BreakNode& node) override;
-        void visit(BlockNode& node) override;
-        void visit(ParameterNode& node) override;
-        void visit(FunctionNode& node) override;
-        void visit(FunctionCallNode& node) override;
-        void visit(ReturnNode& node) override;
-    private:
-        struct FunctionSignature {
-            std::string returnType;
-            std::vector<std::string> paramTypes;
+    void visit(VarDeclNode& node) override;
+    void visit(NumberLiteralNode& node) override;
+    void visit(CharLiteralNode& node) override;
+    void visit(StringLiteralNode& node) override;
+    void visit(BooleanLiteralNode& node) override;
+    void visit(VoidLiteralNode& node) override;
+    void visit(IntArrayLiteralNode& node) override;
+    void visit(ArrayGetNode& node) override;
+    void visit(MethodCallNode& node) override;
+    void visit(IdentifierNode& node) override;
+    void visit(AssignNode& node) override;
+    void visit(BinaryOpNode& node) override;
+    void visit(UnaryOpNode& node) override;
+    void visit(IfNode& node) override;
+    void visit(WhileNode& node) override;
+    void visit(BreakNode& node) override;
+    void visit(BlockNode& node) override;
+    void visit(ParameterNode& node) override;
+    void visit(FunctionNode& node) override;
+    void visit(FunctionCallNode& node) override;
+    void visit(ReturnNode& node) override;
 
-            bool operator==(const FunctionSignature& other) const {
-                return returnType == other.returnType && 
-                    paramTypes == other.paramTypes;
-            }
-        };
+private:
+    struct FunctionSignature {
+        std::string returnType;
+        std::vector<std::string> paramTypes;
 
-        std::unordered_map<std::string, std::vector<FunctionSignature>> functions;
-        std::vector<std::unordered_map<std::string, std::string>> scopes;
-        
-        const std::unordered_map<std::string, std::vector<FunctionSignature>> reservedFunctions = {
-            {"in", {
-                {"int", {"int"}},
-                {"int", {}},
-                {"uint", {"int"}},
-                {"uint", {}},
-                {"char", {}},
-                {"string", {"int"}},
-                {"string", {}},
-                {"int[]", {"int"}},
-                {"int[]", {}}
-            }},
-            {"out", {
-                {"void", {"int"}},
-                {"void", {"uint"}},
-                {"void", {"char"}},
-                {"void", {"int[]"}},
-                {"void", {"string"}}
-            }}
-        };
+        bool operator==(const FunctionSignature& other) const {
+            return returnType == other.returnType && paramTypes == other.paramTypes;
+        }
+    };
 
-        const std::unordered_map<std::string, std::unordered_map<std::string, FunctionSignature>> typeMethods = {
-            {"int[]", {
-                {"size", {"int", {}}}
-            }},
+    std::unordered_map<std::string, std::vector<FunctionSignature>> functions;
+    std::vector<std::unordered_map<std::string, std::string>> scopes;
 
-            {"string", {
-                {"size", {"int", {}}}
-            }}
-        };
+    // clang-format off
+    const std::unordered_map<std::string, std::vector<FunctionSignature>> reservedFunctions = {
+        {"in", {
+            {"int", {"int"}},
+            {"int", {}},
+            {"uint", {"int"}},
+            {"uint", {}},
+            {"char", {}},
+            {"string", {"int"}},
+            {"string", {}},
+            {"int[]", {"int"}},
+            {"int[]", {}}
+        }},
+        {"out", {
+            {"void", {"int"}},
+            {"void", {"uint"}},
+            {"void", {"char"}},
+            {"void", {"int[]"}},
+            {"void", {"string"}}
+        }}
+    };
 
-        bool isReserved(const std::string& name, FunctionSignature sig);
-        std::string findFunction(const std::string& name, std::vector<std::string> paramTypes, std::string& expected);
+    const std::unordered_map<std::string, std::unordered_map<std::string, FunctionSignature>> typeMethods = {
+        {"int[]", {
+            {"size", {"int", {}}}
+        }},
 
-        void enterScope();
-        void exitScope();
+        {"string", {
+            {"size", {"int", {}}}
+        }}
+    };
+    // clang-format on
 
-        void declareVariable(const std::string& name, std::string data);
-        std::string lookupVariable(const std::string& name);
+    bool isReserved(const std::string& name, const FunctionSignature& sig);
+    std::string findFunction(const std::string& name, std::vector<std::string> paramTypes,
+                             std::string& expected);
 
-        int loopDepth = 0;
-        bool hasReturn;
-        std::string currentReturnType;
+    void enterScope();
+    void exitScope();
 
-        ExpressionNode* lastVisitedExpression = nullptr;
-        std::string expectedType;
+    void declareVariable(const std::string& name, std::string data);
+    std::string lookupVariable(const std::string& name);
+
+    int loopDepth  = 0;
+    bool hasReturn = false;
+    std::string currentReturnType;
+
+    ExpressionNode* lastVisitedExpression = nullptr;
+    std::string expectedType;
 };
 
 #endif

@@ -1,15 +1,16 @@
 #pragma once
 
-#include <vector>
-#include <string>
+#include <cstdint>
 #include <iostream>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "ASTVisitor.hpp"
 
-enum class ASTNodeType {
+enum class ASTNodeType : uint8_t {
     VarDecl,
-    
+
     NumberLiteral,
     CharLiteral,
     StringLiteral,
@@ -19,17 +20,17 @@ enum class ASTNodeType {
     ArrayGet,
     ArraySize,
     MethodCall,
-    
+
     Identifier,
     Assignment,
-    
+
     BinaryOp,
     UnaryOp,
-    
+
     If,
     While,
     Break,
-    
+
     Block,
     Parameter,
     Function,
@@ -42,26 +43,38 @@ enum class ASTNodeType {
 struct ASTNode {
     ASTNodeType nodeType;
 
-    ASTNode(ASTNodeType nodeType)
-        : nodeType(nodeType) { }
+    ASTNode(ASTNodeType nodeType) : nodeType(nodeType) {
+    }
 
     virtual void accept(ASTVisitor& visitor) = 0;
+
+    virtual ~ASTNode() = default;
+
+    ASTNode(const ASTNode&)            = delete;
+    ASTNode& operator=(const ASTNode&) = delete;
+
+    ASTNode(ASTNode&&)            = delete;
+    ASTNode& operator=(ASTNode&&) = delete;
 };
 
 struct ExpressionNode : ASTNode {
     std::string resolvedType;
 
-    ExpressionNode(ASTNodeType nodeType)
-        : ASTNode(nodeType) { }
+    ExpressionNode(ASTNodeType nodeType) : ASTNode(nodeType) {
+    }
 };
 
 struct VarDeclNode : ASTNode {
     std::string type;
     std::string name;
-    ASTNode* value;
+    std::unique_ptr<ASTNode> value;
 
-    VarDeclNode(const std::string& type, const std::string& name, ASTNode* value)
-        : ASTNode(ASTNodeType::VarDecl), type(type), name(name), value(value) { }
+    VarDeclNode(std::string type, std::string name, std::unique_ptr<ASTNode> value)
+        : ASTNode(ASTNodeType::VarDecl),
+          type(std::move(type)),
+          name(std::move(name)),
+          value(std::move(value)) {
+    }
 
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
@@ -70,9 +83,9 @@ struct VarDeclNode : ASTNode {
 
 struct NumberLiteralNode : ExpressionNode {
     long number;
-    
-    NumberLiteralNode(long number)
-        : ExpressionNode(ASTNodeType::NumberLiteral), number(number) { }
+
+    NumberLiteralNode(long number) : ExpressionNode(ASTNodeType::NumberLiteral), number(number) {
+    }
 
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
@@ -82,8 +95,8 @@ struct NumberLiteralNode : ExpressionNode {
 struct CharLiteralNode : ExpressionNode {
     char value;
 
-    CharLiteralNode(char value)
-        : ExpressionNode(ASTNodeType::CharLiteral), value(value) { }
+    CharLiteralNode(char value) : ExpressionNode(ASTNodeType::CharLiteral), value(value) {
+    }
 
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
@@ -94,8 +107,9 @@ struct StringLiteralNode : ExpressionNode {
     std::string value;
 
     StringLiteralNode(std::string value)
-        : ExpressionNode(ASTNodeType::StringLiteral), value(value) { }
-    
+        : ExpressionNode(ASTNodeType::StringLiteral), value(std::move(value)) {
+    }
+
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
     }
@@ -104,17 +118,17 @@ struct StringLiteralNode : ExpressionNode {
 struct BooleanLiteralNode : ExpressionNode {
     bool value;
 
-    BooleanLiteralNode(bool value)
-        : ExpressionNode(ASTNodeType::BooleanLiteral), value(value) { }
-    
+    BooleanLiteralNode(bool value) : ExpressionNode(ASTNodeType::BooleanLiteral), value(value) {
+    }
+
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
     }
 };
 
 struct VoidLiteralNode : ExpressionNode {
-    VoidLiteralNode()
-        : ExpressionNode(ASTNodeType::VoidLiteral) { }
+    VoidLiteralNode() : ExpressionNode(ASTNodeType::VoidLiteral) {
+    }
 
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
@@ -122,10 +136,11 @@ struct VoidLiteralNode : ExpressionNode {
 };
 
 struct IntArrayLiteralNode : ExpressionNode {
-    std::vector<ASTNode*> values;
-    
-    IntArrayLiteralNode(std::vector<ASTNode*> values)
-        : ExpressionNode(ASTNodeType::IntArrayLiteral), values(values) { }
+    std::vector<std::unique_ptr<ASTNode>> values;
+
+    IntArrayLiteralNode(std::vector<std::unique_ptr<ASTNode>> values)
+        : ExpressionNode(ASTNodeType::IntArrayLiteral), values(std::move(values)) {
+    }
 
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
@@ -133,11 +148,14 @@ struct IntArrayLiteralNode : ExpressionNode {
 };
 
 struct ArrayGetNode : ExpressionNode {
-    ASTNode* object;
-    ASTNode* index;
+    std::unique_ptr<ASTNode> object;
+    std::unique_ptr<ASTNode> index;
 
-    ArrayGetNode(ASTNode* object, ASTNode* index)
-        : ExpressionNode(ASTNodeType::ArrayGet), object(object), index(index) { }
+    ArrayGetNode(std::unique_ptr<ASTNode> object, std::unique_ptr<ASTNode> index)
+        : ExpressionNode(ASTNodeType::ArrayGet),
+          object(std::move(object)),
+          index(std::move(index)) {
+    }
 
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
@@ -145,13 +163,18 @@ struct ArrayGetNode : ExpressionNode {
 };
 
 struct MethodCallNode : ExpressionNode {
-    ASTNode* object;
+    std::unique_ptr<ASTNode> object;
     std::string methodName;
-    std::vector<ASTNode*> arguments;
+    std::vector<std::unique_ptr<ASTNode>> arguments;
 
-    MethodCallNode(ASTNode* object, const std::string& methodName, std::vector<ASTNode*> arguments)
-        : ExpressionNode(ASTNodeType::MethodCall), object(object), methodName(methodName), arguments(arguments) { }
-    
+    MethodCallNode(std::unique_ptr<ASTNode> object, std::string methodName,
+                   std::vector<std::unique_ptr<ASTNode>> arguments)
+        : ExpressionNode(ASTNodeType::MethodCall),
+          object(std::move(object)),
+          methodName(std::move(methodName)),
+          arguments(std::move(arguments)) {
+    }
+
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
     }
@@ -159,9 +182,10 @@ struct MethodCallNode : ExpressionNode {
 
 struct IdentifierNode : ExpressionNode {
     std::string name;
-    
-    IdentifierNode(const std::string name)
-        : ExpressionNode(ASTNodeType::Identifier), name(name) { }
+
+    IdentifierNode(std::string name)
+        : ExpressionNode(ASTNodeType::Identifier), name(std::move(name)) {
+    }
 
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
@@ -169,11 +193,12 @@ struct IdentifierNode : ExpressionNode {
 };
 
 struct AssignNode : ASTNode {
-    ASTNode* var1;
-    ASTNode* var2;
-    
-    AssignNode(ASTNode* var1, ASTNode* var2)
-        : ASTNode(ASTNodeType::Assignment), var1(var1), var2(var2) { }
+    std::unique_ptr<ASTNode> var1;
+    std::unique_ptr<ASTNode> var2;
+
+    AssignNode(std::unique_ptr<ASTNode> var1, std::unique_ptr<ASTNode> var2)
+        : ASTNode(ASTNodeType::Assignment), var1(std::move(var1)), var2(std::move(var2)) {
+    }
 
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
@@ -182,11 +207,16 @@ struct AssignNode : ASTNode {
 
 struct BinaryOpNode : ExpressionNode {
     std::string op;
-    ASTNode* left;
-    ASTNode* right;
+    std::unique_ptr<ASTNode> left;
+    std::unique_ptr<ASTNode> right;
 
-    BinaryOpNode(const std::string& op, ASTNode* left, ASTNode* right)
-        : ExpressionNode(ASTNodeType::BinaryOp), op(op), left(left), right(right) { }
+    BinaryOpNode(std::string operation, std::unique_ptr<ASTNode> left,
+                 std::unique_ptr<ASTNode> right)
+        : ExpressionNode(ASTNodeType::BinaryOp),
+          op(std::move(operation)),
+          left(std::move(left)),
+          right(std::move(right)) {
+    }
 
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
@@ -195,10 +225,13 @@ struct BinaryOpNode : ExpressionNode {
 
 struct UnaryOpNode : ExpressionNode {
     std::string op;
-    ASTNode* operand;
+    std::unique_ptr<ASTNode> operand;
 
-    UnaryOpNode(const std::string& op, ASTNode* operand)
-        : ExpressionNode(ASTNodeType::UnaryOp), op(op), operand(operand) { }
+    UnaryOpNode(std::string operation, std::unique_ptr<ASTNode> operand)
+        : ExpressionNode(ASTNodeType::UnaryOp),
+          op(std::move(operation)),
+          operand(std::move(operand)) {
+    }
 
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
@@ -206,12 +239,17 @@ struct UnaryOpNode : ExpressionNode {
 };
 
 struct IfNode : ASTNode {
-    ASTNode* condition;
-    ASTNode* thenBranch;
-    ASTNode* elseBranch = nullptr;
+    std::unique_ptr<ASTNode> condition;
+    std::unique_ptr<ASTNode> thenBranch;
+    std::unique_ptr<ASTNode> elseBranch = nullptr;
 
-    IfNode(ASTNode* condition, ASTNode* thenBranch, ASTNode* elseBranch = nullptr)
-        : ASTNode(ASTNodeType::If), condition(condition), thenBranch(thenBranch), elseBranch(elseBranch) { }
+    IfNode(std::unique_ptr<ASTNode> condition, std::unique_ptr<ASTNode> thenBranch,
+           std::unique_ptr<ASTNode> elseBranch = nullptr)
+        : ASTNode(ASTNodeType::If),
+          condition(std::move(condition)),
+          thenBranch(std::move(thenBranch)),
+          elseBranch(std::move(elseBranch)) {
+    }
 
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
@@ -219,11 +257,12 @@ struct IfNode : ASTNode {
 };
 
 struct WhileNode : ASTNode {
-    ASTNode* condition;
-    ASTNode* body;
+    std::unique_ptr<ASTNode> condition;
+    std::unique_ptr<ASTNode> body;
 
-    WhileNode(ASTNode* condition, ASTNode* body)
-        : ASTNode(ASTNodeType::While), condition(condition), body(body) { }
+    WhileNode(std::unique_ptr<ASTNode> condition, std::unique_ptr<ASTNode> body)
+        : ASTNode(ASTNodeType::While), condition(std::move(condition)), body(std::move(body)) {
+    }
 
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
@@ -231,8 +270,8 @@ struct WhileNode : ASTNode {
 };
 
 struct BreakNode : ASTNode {
-    BreakNode()
-        : ASTNode(ASTNodeType::Break) { }
+    BreakNode() : ASTNode(ASTNodeType::Break) {
+    }
 
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
@@ -240,15 +279,17 @@ struct BreakNode : ASTNode {
 };
 
 struct BlockNode : ASTNode {
-    std::vector<ASTNode*> children;
+    std::vector<std::unique_ptr<ASTNode>> children;
 
-    void addChild(ASTNode* child) {
-        if (child == nullptr) return;
-        children.push_back(child);
+    void addChild(std::unique_ptr<ASTNode> child) {
+        if (child == nullptr) {
+            return;
+        }
+        children.push_back(std::move(child));
     }
 
-    BlockNode()
-        : ASTNode(ASTNodeType::Block) { }
+    BlockNode() : ASTNode(ASTNodeType::Block) {
+    }
 
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
@@ -260,7 +301,8 @@ struct ParameterNode : ASTNode {
     std::string type;
 
     ParameterNode(std::string name, std::string type)
-        : ASTNode(ASTNodeType::Parameter), name(name), type(type) { }
+        : ASTNode(ASTNodeType::Parameter), name(std::move(name)), type(std::move(type)) {
+    }
 
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
@@ -270,11 +312,17 @@ struct ParameterNode : ASTNode {
 struct FunctionNode : ASTNode {
     std::string returnType;
     std::string name;
-    std::vector<ASTNode*> parameters;
-    ASTNode* body;
+    std::vector<std::unique_ptr<ASTNode>> parameters;
+    std::unique_ptr<ASTNode> body;
 
-    FunctionNode(std::string returnType, std::string name, std::vector<ASTNode*> parameters, ASTNode* body)
-        : ASTNode(ASTNodeType::Function), returnType(returnType), name(name), parameters(parameters), body(body) { }
+    FunctionNode(std::string returnType, std::string name,
+                 std::vector<std::unique_ptr<ASTNode>> parameters, std::unique_ptr<ASTNode> body)
+        : ASTNode(ASTNodeType::Function),
+          returnType(std::move(returnType)),
+          name(std::move(name)),
+          parameters(std::move(parameters)),
+          body(std::move(body)) {
+    }
 
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
@@ -283,10 +331,13 @@ struct FunctionNode : ASTNode {
 
 struct FunctionCallNode : ExpressionNode {
     std::string name;
-    std::vector<ASTNode*> parameters;
+    std::vector<std::unique_ptr<ASTNode>> parameters;
 
-    FunctionCallNode(std::string name, std::vector<ASTNode*> parameters)
-        : ExpressionNode(ASTNodeType::FunctionCall), name(name), parameters(parameters) { }
+    FunctionCallNode(std::string name, std::vector<std::unique_ptr<ASTNode>> parameters)
+        : ExpressionNode(ASTNodeType::FunctionCall),
+          name(std::move(name)),
+          parameters(std::move(parameters)) {
+    }
 
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);
@@ -294,10 +345,11 @@ struct FunctionCallNode : ExpressionNode {
 };
 
 struct ReturnNode : ASTNode {
-    ASTNode* returnValue;
+    std::unique_ptr<ASTNode> returnValue;
 
-    ReturnNode(ASTNode* returnValue)
-        : ASTNode(ASTNodeType::Return), returnValue(returnValue) { }
+    ReturnNode(std::unique_ptr<ASTNode> returnValue)
+        : ASTNode(ASTNodeType::Return), returnValue(std::move(returnValue)) {
+    }
 
     void accept(ASTVisitor& visitor) override {
         visitor.visit(*this);

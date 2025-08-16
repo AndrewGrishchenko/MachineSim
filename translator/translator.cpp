@@ -2,11 +2,10 @@
 #include <optional>
 
 #include "ASTNode.hpp"
-#include "treeGen.h"
-#include "semanticAnalyzer.h"
-#include "codeGenerator.h"
 #include "binarizer.h"
-#include "treeVisualizer.hpp"
+#include "codeGenerator.h"
+#include "semanticAnalyzer.h"
+#include "treeGen.h"
 
 struct Args {
     bool isHighLevel = true;
@@ -15,44 +14,47 @@ struct Args {
     std::string outputFile;
 };
 
-Args parseArgs(int argc, char* argv[]) {
-    if (argc < 3)
+Args parseArgs(const std::vector<std::string>& argsVec) {
+    size_t argc = argsVec.size();
+
+    if (argc < 3) {
         throw std::runtime_error("Usage: ./translator [--asm|--hl] [--viz file] <input> <output>");
+    }
 
     Args args;
-    int i = 1;
+    int counter = 1;
 
-    while (i < argc - 2) {
-        std::string flag = argv[i];
+    while (counter < argc - 2) {
+        const std::string& flag = argsVec[counter];
 
         if (flag == "--asm") {
             args.isHighLevel = false;
-            ++i;
-        }
-        else if (flag == "--hl") {
+            counter++;
+        } else if (flag == "--hl") {
             args.isHighLevel = true;
-            ++i;
-        }
-        else if (flag == "--viz") {
-            if (i + 1 >= argc - 2)
+            counter++;
+        } else if (flag == "--viz") {
+            if (counter + 1 >= argc - 2) {
                 throw std::runtime_error("--viz requires a filename");
-            args.vizFile = argv[i + 1];
-            i += 2;
-        }
-        else {
+            }
+            args.vizFile = argsVec[counter + 1];
+            counter += 2;
+        } else {
             throw std::runtime_error("Unknown flag: " + flag);
         }
     }
 
-    args.inputFile = argv[argc - 2];
-    args.outputFile = argv[argc - 1];
+    args.inputFile  = argsVec[argc - 2];
+    args.outputFile = argsVec[argc - 1];
 
     return args;
 }
 
 int main(int argc, char* argv[]) {
     try {
-        Args args = parseArgs(argc, argv);
+        const std::vector<std::string> argsVec(argv, argv + argc);
+
+        Args args = parseArgs(argsVec);
         std::string code;
 
         if (args.isHighLevel) {
@@ -62,22 +64,22 @@ int main(int argc, char* argv[]) {
             std::string data = buffer.str();
 
             TreeGenerator treeGenerator;
-            ASTNode* tree = treeGenerator.makeTree(data);
+            std::unique_ptr<ASTNode> tree = treeGenerator.makeTree(data);
 
             SemanticAnalyzer semanticAnalyzer;
-            semanticAnalyzer.analyze(tree);
+            semanticAnalyzer.analyze(tree.get());
             std::cout << "Semantic analyze success\n";
 
             if (args.vizFile) {
-                TreeVisualizer tv;
-                std::string uml = tv.makeUML(tree);
-                std::ofstream uml_file(*args.vizFile);
-                uml_file << uml;
-                std::cout << "PlantUML visualize saved to " << *args.vizFile << std::endl;
+                // TreeVisualizer treeViz;
+                // std::string uml = treeViz.makeUML(tree);
+                // std::ofstream uml_file(*args.vizFile);
+                // uml_file << uml;
+                // std::cout << "PlantUML visualize saved to " << *args.vizFile << "\n";
             }
 
             CodeGenerator codeGenerator;
-            code = codeGenerator.generateCode(tree);
+            code = codeGenerator.generateCode(tree.get());
         } else {
             std::ifstream asm_file(args.inputFile);
             std::stringstream buffer;
@@ -89,8 +91,8 @@ int main(int argc, char* argv[]) {
         binarizer.parse(code);
         binarizer.writeToFile(args.outputFile);
 
-        std::cout << "Binary program saved to " << args.outputFile << std::endl;
+        std::cout << "Binary program saved to " << args.outputFile << "\n";
     } catch (const std::exception& ex) {
-        std::cerr << ex.what() << std::endl;
+        std::cerr << ex.what() << "\n";
     }
 }

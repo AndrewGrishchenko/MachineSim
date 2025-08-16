@@ -1,10 +1,6 @@
 #include "treeGen.h"
 
-TreeGenerator::TreeGenerator() { }
-
-TreeGenerator::~TreeGenerator() { }
-
-std::string TreeGenerator::tokenStr(Token token) {
+std::string TreeGenerator::tokenStr(const Token& token) {
     switch (token.type) {
         case TokenType::KeywordIf:
             return "KeywordIf";
@@ -89,8 +85,8 @@ std::string TreeGenerator::tokenStr(Token token) {
     }
 }
 
-ASTNode* TreeGenerator::makeTree(std::string data) {
-    BlockNode* root = new BlockNode();
+std::unique_ptr<ASTNode> TreeGenerator::makeTree(const std::string& data) {
+    auto root = std::make_unique<BlockNode>();
 
     std::vector<Token> tokens = tokenize(data);
 
@@ -103,512 +99,569 @@ ASTNode* TreeGenerator::makeTree(std::string data) {
     return root;
 }
 
-ASTNode* TreeGenerator::parseAssignStatement(std::vector<Token> tokens, size_t& pos) {
-    if (tokens[pos].type != TokenType::Identifier)
+std::unique_ptr<ASTNode> TreeGenerator::parseAssignStatement(std::vector<Token> tokens,
+                                                             size_t& pos) {
+    if (tokens[pos].type != TokenType::Identifier) {
         throw std::runtime_error("Expected variable name");
+    }
     std::string varName = tokens[pos].value;
     pos++;
 
-    ASTNode* var;
+    std::unique_ptr<ASTNode> var;
     if (tokens[pos].type == TokenType::LBracket) {
         pos++;
 
-        ASTNode* expr = parseExpression(tokens, pos);
-        
-        if (tokens[pos].type != TokenType::RBracket)
+        std::unique_ptr<ASTNode> expr = parseExpression(tokens, pos);
+
+        if (tokens[pos].type != TokenType::RBracket) {
             throw std::runtime_error("Expected ']'");
+        }
         pos++;
 
-        var = new ArrayGetNode(new IdentifierNode(varName), expr);
+        var = std::make_unique<ArrayGetNode>(std::make_unique<IdentifierNode>(varName),
+                                             std::move(expr));
     } else {
-        var = new IdentifierNode(varName);
+        var = std::make_unique<IdentifierNode>(varName);
     }
 
-    if (tokens[pos].type != TokenType::Equals)
+    if (tokens[pos].type != TokenType::Equals) {
         throw std::runtime_error("Expected '=', got " + tokenStr(tokens[pos]));
+    }
     pos++;
 
-    ASTNode* expr = parseExpression(tokens, pos);
+    std::unique_ptr<ASTNode> expr = parseExpression(tokens, pos);
 
-    if (tokens[pos].type != TokenType::Semicolon)
+    if (tokens[pos].type != TokenType::Semicolon) {
         throw std::runtime_error("Expected ';'");
+    }
     pos++;
 
-    return new AssignNode(var, expr);
+    return std::make_unique<AssignNode>(std::move(var), std::move(expr));
 }
 
-ASTNode* TreeGenerator::parseVarStatement(std::vector<Token> tokens, size_t& pos) {
+std::unique_ptr<ASTNode> TreeGenerator::parseVarStatement(std::vector<Token> tokens, size_t& pos) {
     std::string type;
-    if (tokens[pos].type == TokenType::KeywordInt)
+    if (tokens[pos].type == TokenType::KeywordInt) {
         type = "int";
-    else if (tokens[pos].type == TokenType::KeywordUint)
+    } else if (tokens[pos].type == TokenType::KeywordUint) {
         type = "uint";
-    else if (tokens[pos].type == TokenType::KeywordChar)
+    } else if (tokens[pos].type == TokenType::KeywordChar) {
         type = "char";
-    else if (tokens[pos].type == TokenType::KeywordString)
+    } else if (tokens[pos].type == TokenType::KeywordString) {
         type = "string";
-    else if (tokens[pos].type == TokenType::KeywordBool)
+    } else if (tokens[pos].type == TokenType::KeywordBool) {
         type = "bool";
-    else if (tokens[pos].type == TokenType::KeywordIntArr)
+    } else if (tokens[pos].type == TokenType::KeywordIntArr) {
         type = "int[]";
-    else
+    } else {
         throw std::runtime_error("Expected data type");
+    }
     pos++;
 
-    if (tokens[pos].type != TokenType::Identifier)
+    if (tokens[pos].type != TokenType::Identifier) {
         throw std::runtime_error("Expected variable name");
+    }
     std::string varName = tokens[pos].value;
     pos++;
 
-    if (tokens[pos].type != TokenType::Equals)
+    if (tokens[pos].type != TokenType::Equals) {
         throw std::runtime_error("Expected '='");
+    }
     pos++;
 
-    ASTNode* expr;
+    std::unique_ptr<ASTNode> expr;
 
     expr = parseExpression(tokens, pos);
-    
-    if (tokens[pos].type != TokenType::Semicolon)
+
+    if (tokens[pos].type != TokenType::Semicolon) {
         throw std::runtime_error("Expected ';'");
+    }
     pos++;
-    
-    return new VarDeclNode(type, varName, expr);
+
+    return std::make_unique<VarDeclNode>(type, varName, std::move(expr));
 }
 
-ASTNode* TreeGenerator::parseArray(std::vector<Token> tokens, size_t& pos) {
-    if (tokens[pos].type != TokenType::LBrace)
+std::unique_ptr<ASTNode> TreeGenerator::parseArray(std::vector<Token> tokens, size_t& pos) {
+    if (tokens[pos].type != TokenType::LBrace) {
         throw std::runtime_error("Expected '{'");
+    }
     pos++;
 
-    std::vector<ASTNode*> values;
+    std::vector<std::unique_ptr<ASTNode>> values;
     while (tokens[pos].type != TokenType::RBrace) {
         values.push_back(parseExpression(tokens, pos));
 
-        if (tokens[pos].type == TokenType::Comma)
+        if (tokens[pos].type == TokenType::Comma) {
             pos++;
-        else if (tokens[pos].type != TokenType::RBrace)
+        } else if (tokens[pos].type != TokenType::RBrace) {
             throw std::runtime_error("Expected ',' or '}'");
+        }
     }
     pos++;
 
-    return new IntArrayLiteralNode(values);
+    return std::make_unique<IntArrayLiteralNode>(std::move(values));
 }
 
-ASTNode* TreeGenerator::parseStatement(std::vector<Token> tokens, size_t& pos) {
-    ASTNode* node;
-    
-    if (tokens[pos].type == TokenType::KeywordInt ||
-        tokens[pos].type == TokenType::KeywordUint ||
+std::unique_ptr<ASTNode> TreeGenerator::parseStatement(std::vector<Token> tokens, size_t& pos) {
+    std::unique_ptr<ASTNode> node;
+
+    if (tokens[pos].type == TokenType::KeywordInt || tokens[pos].type == TokenType::KeywordUint ||
         tokens[pos].type == TokenType::KeywordChar ||
         tokens[pos].type == TokenType::KeywordString ||
-        tokens[pos].type == TokenType::KeywordBool || 
-        tokens[pos].type == TokenType::KeywordVoid ||
+        tokens[pos].type == TokenType::KeywordBool || tokens[pos].type == TokenType::KeywordVoid ||
         tokens[pos].type == TokenType::KeywordIntArr) {
-        if (pos + 2 < tokens.size() &&
-            tokens[pos + 1].type == TokenType::Identifier &&
+        if (pos + 2 < tokens.size() && tokens[pos + 1].type == TokenType::Identifier &&
             tokens[pos + 2].type == TokenType::LParen) {
             return parseFunction(tokens, pos);
-        } else {
-            return parseVarStatement(tokens, pos);
-        }
-    } else if (tokens[pos].type == TokenType::KeywordIf) {
-        return parseIf(tokens, pos);
-    } else if (tokens[pos].type == TokenType::KeywordWhile) {
-        return parseWhile(tokens, pos);
-    } else if (tokens[pos].type == TokenType::KeywordBreak) {
-        return parseBreak(tokens, pos);
-    } else if (tokens[pos].type == TokenType::KeywordReturn) {
-        return parseReturn(tokens, pos);
-    } else if (tokens[pos].type == TokenType::Identifier) {
-        if (pos + 1 < tokens.size() &&
-            tokens[pos + 1].type == TokenType::LParen) {
-            ASTNode* node = parseFunctionCall(tokens, pos);
-
-            if (tokens[pos].type != TokenType::Semicolon)
-                throw std::runtime_error("Expected ';'");
-            pos++;
-            
-            return node;
-        } else {
-            return parseAssignStatement(tokens, pos);
         }
 
-    } else {
-        return parseExpression(tokens, pos);
+        return parseVarStatement(tokens, pos);
     }
+    if (tokens[pos].type == TokenType::KeywordIf) {
+        return parseIf(tokens, pos);
+    }
+    if (tokens[pos].type == TokenType::KeywordWhile) {
+        return parseWhile(tokens, pos);
+    }
+    if (tokens[pos].type == TokenType::KeywordBreak) {
+        return parseBreak(tokens, pos);
+    }
+    if (tokens[pos].type == TokenType::KeywordReturn) {
+        return parseReturn(tokens, pos);
+    }
+    if (tokens[pos].type == TokenType::Identifier) {
+        if (pos + 1 < tokens.size() && tokens[pos + 1].type == TokenType::LParen) {
+            std::unique_ptr<ASTNode> node = parseFunctionCall(tokens, pos);
+
+            if (tokens[pos].type != TokenType::Semicolon) {
+                throw std::runtime_error("Expected ';'");
+            }
+            pos++;
+
+            return node;
+        }
+
+        return parseAssignStatement(tokens, pos);
+    }
+
+    return parseExpression(tokens, pos);
 }
 
-ASTNode* TreeGenerator::parseIf(std::vector<Token> tokens, size_t& pos) {
-    if (tokens[pos].type != TokenType::KeywordIf)
+std::unique_ptr<ASTNode> TreeGenerator::parseIf(std::vector<Token> tokens, size_t& pos) {
+    if (tokens[pos].type != TokenType::KeywordIf) {
         throw std::runtime_error("Expected 'if'");
+    }
     pos++;
 
-    if (tokens[pos].type != TokenType::LParen)
+    if (tokens[pos].type != TokenType::LParen) {
         throw std::runtime_error("Expected '('");
+    }
     pos++;
 
-    ASTNode* condition = parseExpression(tokens, pos);
+    std::unique_ptr<ASTNode> condition = parseExpression(tokens, pos);
 
-    if (tokens[pos].type != TokenType::RParen)
+    if (tokens[pos].type != TokenType::RParen) {
         throw std::runtime_error("Expected ')'");
+    }
     pos++;
 
-    ASTNode* thenBranch = parseBlock(tokens, pos);
+    std::unique_ptr<ASTNode> thenBranch = parseBlock(tokens, pos);
 
-    ASTNode* elseBranch = nullptr;
+    std::unique_ptr<ASTNode> elseBranch = nullptr;
     if (pos < tokens.size() && tokens[pos].type == TokenType::KeywordElse) {
         pos++;
         elseBranch = parseBlock(tokens, pos);
     }
 
-    return new IfNode(condition, thenBranch, elseBranch);
+    return std::make_unique<IfNode>(std::move(condition), std::move(thenBranch),
+                                    std::move(elseBranch));
 }
 
-ASTNode* TreeGenerator::parseWhile(std::vector<Token> tokens, size_t& pos) {
-    if (tokens[pos].type != TokenType::KeywordWhile)
+std::unique_ptr<ASTNode> TreeGenerator::parseWhile(std::vector<Token> tokens, size_t& pos) {
+    if (tokens[pos].type != TokenType::KeywordWhile) {
         throw std::runtime_error("Expected 'while'");
+    }
     pos++;
 
-    if (tokens[pos].type != TokenType::LParen)
+    if (tokens[pos].type != TokenType::LParen) {
         throw std::runtime_error("Expected '('");
+    }
     pos++;
 
-    ASTNode* condition = parseExpression(tokens, pos);
+    std::unique_ptr<ASTNode> condition = parseExpression(tokens, pos);
 
-    if (tokens[pos].type != TokenType::RParen)
+    if (tokens[pos].type != TokenType::RParen) {
         throw std::runtime_error("Expected ')");
+    }
     pos++;
 
-    ASTNode* body = parseBlock(tokens, pos);
+    std::unique_ptr<ASTNode> body = parseBlock(tokens, pos);
 
-    return new WhileNode(condition, body);
+    return std::make_unique<WhileNode>(std::move(condition), std::move(body));
 }
 
-ASTNode* TreeGenerator::parseBreak(std::vector<Token> tokens, size_t& pos) {
-    if (tokens[pos].type != TokenType::KeywordBreak)
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+std::unique_ptr<ASTNode> TreeGenerator::parseBreak(std::vector<Token> tokens, size_t& pos) {
+    if (tokens[pos].type != TokenType::KeywordBreak) {
         throw std::runtime_error("Expected 'break'");
+    }
     pos++;
 
-    if (tokens[pos].type != TokenType::Semicolon)
+    if (tokens[pos].type != TokenType::Semicolon) {
         throw std::runtime_error("Expected ';'");
+    }
     pos++;
 
-    return new BreakNode();
+    return std::make_unique<BreakNode>();
 }
 
-ASTNode* TreeGenerator::parseBlock(std::vector<Token> tokens, size_t& pos) {
-    if (tokens[pos].type != TokenType::LBrace)
+std::unique_ptr<ASTNode> TreeGenerator::parseBlock(std::vector<Token> tokens, size_t& pos) {
+    if (tokens[pos].type != TokenType::LBrace) {
         throw std::runtime_error("Expected '{'");
+    }
     pos++;
 
-    BlockNode* block = new BlockNode();
+    std::unique_ptr<BlockNode> block = std::make_unique<BlockNode>();
 
-    while (pos < tokens.size() && tokens[pos].type != TokenType::RBrace && tokens[pos].type != TokenType::EndOfFile) {
+    while (pos < tokens.size() && tokens[pos].type != TokenType::RBrace &&
+           tokens[pos].type != TokenType::EndOfFile) {
         block->children.push_back(parseStatement(tokens, pos));
     }
 
-    if (tokens[pos].type != TokenType::RBrace)
+    if (tokens[pos].type != TokenType::RBrace) {
         throw std::runtime_error("Expected '}'");
+    }
     pos++;
 
     return block;
 }
 
-ASTNode* TreeGenerator::parseParameter(std::vector<Token> tokens, size_t& pos) {
-    if (tokens[pos].type != TokenType::KeywordInt &&
-        tokens[pos].type != TokenType::KeywordChar &&
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+std::unique_ptr<ASTNode> TreeGenerator::parseParameter(std::vector<Token> tokens, size_t& pos) {
+    if (tokens[pos].type != TokenType::KeywordInt && tokens[pos].type != TokenType::KeywordChar &&
         tokens[pos].type != TokenType::KeywordString &&
         tokens[pos].type != TokenType::KeywordBool &&
-        tokens[pos].type != TokenType::KeywordIntArr)
+        tokens[pos].type != TokenType::KeywordIntArr) {
         throw std::runtime_error("Expected data type");
+    }
     std::string type = tokens[pos].value;
     pos++;
 
-    if (tokens[pos].type != TokenType::Identifier)
+    if (tokens[pos].type != TokenType::Identifier) {
         throw std::runtime_error("Expected identifier");
+    }
     std::string name = tokens[pos].value;
     pos++;
 
-    return new ParameterNode(name, type);
+    return std::make_unique<ParameterNode>(name, type);
 }
 
-ASTNode* TreeGenerator::parseFunction(std::vector<Token> tokens, size_t& pos) {
-    if (tokens[pos].type != TokenType::KeywordInt &&
-        tokens[pos].type != TokenType::KeywordChar &&
+std::unique_ptr<ASTNode> TreeGenerator::parseFunction(std::vector<Token> tokens, size_t& pos) {
+    if (tokens[pos].type != TokenType::KeywordInt && tokens[pos].type != TokenType::KeywordChar &&
         tokens[pos].type != TokenType::KeywordString &&
-        tokens[pos].type != TokenType::KeywordBool &&
-        tokens[pos].type != TokenType::KeywordVoid &&
-        tokens[pos].type != TokenType::KeywordIntArr)
+        tokens[pos].type != TokenType::KeywordBool && tokens[pos].type != TokenType::KeywordVoid &&
+        tokens[pos].type != TokenType::KeywordIntArr) {
         throw std::runtime_error("Expected data type");
+    }
     std::string returnType = tokens[pos].value;
     pos++;
 
-    if (tokens[pos].type != TokenType::Identifier)
+    if (tokens[pos].type != TokenType::Identifier) {
         throw std::runtime_error("Expected identifier");
+    }
     std::string name = tokens[pos].value;
     pos++;
 
-    if (tokens[pos].type != TokenType::LParen)
+    if (tokens[pos].type != TokenType::LParen) {
         throw std::runtime_error("Expected '('");
+    }
     pos++;
 
-    std::vector<ASTNode*> parameters;
+    std::vector<std::unique_ptr<ASTNode>> parameters;
     while (pos < tokens.size() && tokens[pos].type != TokenType::RParen) {
         parameters.push_back(parseParameter(tokens, pos));
 
         if (tokens[pos].type == TokenType::Comma) {
             pos++;
-        } else if (tokens[pos].type != TokenType::RParen)
+        } else if (tokens[pos].type != TokenType::RParen) {
             throw std::runtime_error("Expected ',' or ')'");
+        }
     }
 
-    if (tokens[pos].type != TokenType::RParen)
+    if (tokens[pos].type != TokenType::RParen) {
         throw std::runtime_error("Expected ')'");
+    }
     pos++;
 
-    ASTNode* body = parseBlock(tokens, pos);
+    std::unique_ptr<ASTNode> body = parseBlock(tokens, pos);
 
-    return new FunctionNode(returnType, name, parameters, body);
+    return std::make_unique<FunctionNode>(returnType, name, std::move(parameters), std::move(body));
 }
 
-ASTNode* TreeGenerator::parseFunctionCall(std::vector<Token> tokens, size_t& pos) {
-    if (tokens[pos].type != TokenType::Identifier)
+std::unique_ptr<ASTNode> TreeGenerator::parseFunctionCall(std::vector<Token> tokens, size_t& pos) {
+    if (tokens[pos].type != TokenType::Identifier) {
         throw std::runtime_error("Expected identifier");
+    }
     std::string name = tokens[pos].value;
     pos++;
 
-    if (tokens[pos].type != TokenType::LParen)
+    if (tokens[pos].type != TokenType::LParen) {
         throw std::runtime_error("Expected '('");
+    }
     pos++;
 
-    std::vector<ASTNode*> parameters;
+    std::vector<std::unique_ptr<ASTNode>> parameters;
     while (pos < tokens.size() && tokens[pos].type != TokenType::RParen) {
         parameters.push_back(parseExpression(tokens, pos));
-        
+
         if (tokens[pos].type == TokenType::Comma) {
             pos++;
-        } else if (tokens[pos].type != TokenType::RParen)
-            throw std::runtime_error("Expected ',' or ')'");
+        } else if (tokens[pos].type != TokenType::RParen) {
+            throw std::runtime_error("Expected ',' or ')' got " + tokenStr(tokens[pos]) + " of " +
+                                     std::to_string(pos));
+        }
     }
 
-    if (tokens[pos].type != TokenType::RParen)
+    if (tokens[pos].type != TokenType::RParen) {
         throw std::runtime_error("Expected ')'");
+    }
     pos++;
 
-    return new FunctionCallNode(name, parameters);
+    return std::make_unique<FunctionCallNode>(name, std::move(parameters));
 }
 
-ASTNode* TreeGenerator::parseReturn(std::vector<Token> tokens, size_t& pos) {
-    if (tokens[pos].type != TokenType::KeywordReturn)
+std::unique_ptr<ASTNode> TreeGenerator::parseReturn(std::vector<Token> tokens, size_t& pos) {
+    if (tokens[pos].type != TokenType::KeywordReturn) {
         throw std::runtime_error("Expected 'return'");
+    }
     pos++;
 
     if (tokens[pos].type == TokenType::Semicolon) {
         pos++;
-        return new ReturnNode(new VoidLiteralNode());
-    } else {
-        ASTNode* node = parseExpression(tokens, pos);
-
-        if (tokens[pos].type != TokenType::Semicolon)
-            throw std::runtime_error("Expected ';'");
-        pos++;
-
-        return new ReturnNode(node);
+        return std::make_unique<ReturnNode>(std::make_unique<VoidLiteralNode>());
     }
-}
 
-ASTNode* TreeGenerator::parseArrayGet(std::vector<Token> tokens, size_t& pos) {
-    if (tokens[pos].type != TokenType::Identifier)
-        throw std::runtime_error("Expected identifier");
-    ASTNode* object = new IdentifierNode(tokens[pos].value);
+    std::unique_ptr<ASTNode> node = parseExpression(tokens, pos);
+
+    if (tokens[pos].type != TokenType::Semicolon) {
+        throw std::runtime_error("Expected ';'");
+    }
     pos++;
 
-    if (tokens[pos].type != TokenType::LBracket)
+    return std::make_unique<ReturnNode>(std::move(node));
+}
+
+std::unique_ptr<ASTNode> TreeGenerator::parseArrayGet(std::vector<Token> tokens, size_t& pos) {
+    if (tokens[pos].type != TokenType::Identifier) {
+        throw std::runtime_error("Expected identifier");
+    }
+    std::unique_ptr<ASTNode> object = std::make_unique<IdentifierNode>(tokens[pos].value);
+    pos++;
+
+    if (tokens[pos].type != TokenType::LBracket) {
         throw std::runtime_error("Expected '['");
+    }
     pos++;
 
-    ASTNode* expr = parseExpression(tokens, pos);
-    
-    if (tokens[pos].type != TokenType::RBracket)
+    std::unique_ptr<ASTNode> expr = parseExpression(tokens, pos);
+
+    if (tokens[pos].type != TokenType::RBracket) {
         throw std::runtime_error("Expected ']'");
+    }
     pos++;
 
-    return new ArrayGetNode(object, expr);
+    return std::make_unique<ArrayGetNode>(std::move(object), std::move(expr));
 }
 
-ASTNode* TreeGenerator::parseMethodCall(std::vector<Token> tokens, size_t& pos) {
-    if (tokens[pos].type != TokenType::Identifier)
+std::unique_ptr<ASTNode> TreeGenerator::parseMethodCall(std::vector<Token> tokens, size_t& pos) {
+    if (tokens[pos].type != TokenType::Identifier) {
         throw std::runtime_error("Expected identifier");
-    IdentifierNode* objectNode = new IdentifierNode(tokens[pos].value);
+    }
+    std::unique_ptr<ASTNode> objectNode = std::make_unique<IdentifierNode>(tokens[pos].value);
     pos++;
 
-    if (tokens[pos].type != TokenType::Dot)
+    if (tokens[pos].type != TokenType::Dot) {
         throw std::runtime_error("Expected dot");
+    }
     pos++;
 
-    if (tokens[pos].type != TokenType::Identifier)
+    if (tokens[pos].type != TokenType::Identifier) {
         throw std::runtime_error("Expected identifier");
+    }
     std::string methodName = tokens[pos].value;
     pos++;
 
-    if (tokens[pos].type != TokenType::LParen)
+    if (tokens[pos].type != TokenType::LParen) {
         throw std::runtime_error("Expected '('");
+    }
     pos++;
 
-    std::vector<ASTNode*> args;
+    std::vector<std::unique_ptr<ASTNode>> args;
     while (tokens[pos].type != TokenType::RParen) {
         args.push_back(parsePrimary(tokens, pos));
 
-        if (tokens[pos].type == TokenType::Comma)
+        if (tokens[pos].type == TokenType::Comma) {
             pos++;
+        }
     }
 
-    if (tokens[pos].type != TokenType::RParen)
+    if (tokens[pos].type != TokenType::RParen) {
         throw std::runtime_error("Expected ')'");
+    }
     pos++;
 
-    return new MethodCallNode(objectNode, methodName, args);
+    return std::make_unique<MethodCallNode>(std::move(objectNode), methodName, std::move(args));
 }
 
-ASTNode* TreeGenerator::parseExpression(std::vector<Token> tokens, size_t& pos) {
-    return parseLogicOr(tokens, pos);
+std::unique_ptr<ASTNode> TreeGenerator::parseExpression(std::vector<Token> tokens, size_t& pos) {
+    return parseLogicOr(std::move(tokens), pos);
 }
 
-ASTNode* TreeGenerator::parseTerm(std::vector<Token> tokens, size_t& pos) {
-    ASTNode* node = parseFactor(tokens, pos);
+std::unique_ptr<ASTNode> TreeGenerator::parseTerm(std::vector<Token> tokens, size_t& pos) {
+    std::unique_ptr<ASTNode> node = parseFactor(tokens, pos);
 
     while (pos < tokens.size() &&
-          (tokens[pos].type == TokenType::Plus || tokens[pos].type == TokenType::Minus)) {
-        std::string op = tokens[pos].value;
+           (tokens[pos].type == TokenType::Plus || tokens[pos].type == TokenType::Minus)) {
+        std::string opr = tokens[pos].value;
         pos++;
-        ASTNode* right = parseFactor(tokens, pos);
-        node = new BinaryOpNode(op, node, right);
+        std::unique_ptr<ASTNode> right = parseFactor(tokens, pos);
+        node = std::make_unique<BinaryOpNode>(opr, std::move(node), std::move(right));
     }
 
     return node;
 }
 
-ASTNode* TreeGenerator::parseFactor(std::vector<Token> tokens, size_t& pos) {
-    ASTNode* node = parseUnary(tokens, pos);
-    
+std::unique_ptr<ASTNode> TreeGenerator::parseFactor(std::vector<Token> tokens, size_t& pos) {
+    std::unique_ptr<ASTNode> node = parseUnary(tokens, pos);
+
     while (pos < tokens.size() &&
-          (tokens[pos].type == TokenType::Multiply || 
-           tokens[pos].type == TokenType::Divide ||
-           tokens[pos].type == TokenType::Rem)) {
-        std::string op = tokens[pos].value;
+           (tokens[pos].type == TokenType::Multiply || tokens[pos].type == TokenType::Divide ||
+            tokens[pos].type == TokenType::Rem)) {
+        std::string opr = tokens[pos].value;
         pos++;
-        ASTNode* right = parseUnary(tokens, pos);
-        node = new BinaryOpNode(op, node, right); 
+        std::unique_ptr<ASTNode> right = parseUnary(tokens, pos);
+        node = std::make_unique<BinaryOpNode>(opr, std::move(node), std::move(right));
     }
 
     return node;
 }
 
-ASTNode* TreeGenerator::parseLogicOr(std::vector<Token> tokens, size_t& pos) {
-    ASTNode* node = parseLogicAnd(tokens, pos);
+std::unique_ptr<ASTNode> TreeGenerator::parseLogicOr(std::vector<Token> tokens, size_t& pos) {
+    std::unique_ptr<ASTNode> node = parseLogicAnd(tokens, pos);
     while (pos < tokens.size() && tokens[pos].type == TokenType::LogicOr) {
-        std::string op = tokens[pos].value;
+        std::string opr = tokens[pos].value;
         pos++;
-        ASTNode* right = parseLogicAnd(tokens, pos);
-        node = new BinaryOpNode({op, node, right});
+        std::unique_ptr<ASTNode> right = parseLogicAnd(tokens, pos);
+        node = std::make_unique<BinaryOpNode>(opr, std::move(node), std::move(right));
     }
 
     return node;
 }
 
-ASTNode* TreeGenerator::parseLogicAnd(std::vector<Token> tokens, size_t& pos) {
-    ASTNode* node = parseEquality(tokens, pos);
+std::unique_ptr<ASTNode> TreeGenerator::parseLogicAnd(std::vector<Token> tokens, size_t& pos) {
+    std::unique_ptr<ASTNode> node = parseEquality(tokens, pos);
     while (pos < tokens.size() && tokens[pos].type == TokenType::LogicAnd) {
-        std::string op = tokens[pos].value;
+        std::string opr = tokens[pos].value;
         pos++;
-        ASTNode* right = parseEquality(tokens, pos);
-        node = new BinaryOpNode(op, node, right);
+        std::unique_ptr<ASTNode> right = parseEquality(tokens, pos);
+        node = std::make_unique<BinaryOpNode>(opr, std::move(node), std::move(right));
     }
 
     return node;
 }
 
-ASTNode* TreeGenerator::parseEquality(std::vector<Token> tokens, size_t& pos) {
-    ASTNode* node = parseComparsion(tokens, pos);
-    while (pos < tokens.size() && 
-          (tokens[pos].type == TokenType::LogicEqual || tokens[pos].type == TokenType::LogicNotEqual)) {
-        std::string op = tokens[pos].value;
+std::unique_ptr<ASTNode> TreeGenerator::parseEquality(std::vector<Token> tokens, size_t& pos) {
+    std::unique_ptr<ASTNode> node = parseComparsion(tokens, pos);
+    while (pos < tokens.size() && (tokens[pos].type == TokenType::LogicEqual ||
+                                   tokens[pos].type == TokenType::LogicNotEqual)) {
+        std::string opr = tokens[pos].value;
         pos++;
-        ASTNode* right = parseComparsion(tokens, pos);
-        node = new BinaryOpNode(op, node, right);
+        std::unique_ptr<ASTNode> right = parseComparsion(tokens, pos);
+        node = std::make_unique<BinaryOpNode>(opr, std::move(node), std::move(right));
     }
 
     return node;
 }
 
-ASTNode* TreeGenerator::parseComparsion(std::vector<Token> tokens, size_t& pos) {
-    ASTNode* node = parseTerm(tokens, pos);
-    while (pos < tokens.size() && 
-          (tokens[pos].type == TokenType::LogicGreater || tokens[pos].type == TokenType::LogicGreaterEqual ||
-           tokens[pos].type == TokenType::LogicLess || tokens[pos].type == TokenType::LogicLessEqual)) {
-        std::string op = tokens[pos].value;
+std::unique_ptr<ASTNode> TreeGenerator::parseComparsion(std::vector<Token> tokens, size_t& pos) {
+    std::unique_ptr<ASTNode> node = parseTerm(tokens, pos);
+    while (pos < tokens.size() && (tokens[pos].type == TokenType::LogicGreater ||
+                                   tokens[pos].type == TokenType::LogicGreaterEqual ||
+                                   tokens[pos].type == TokenType::LogicLess ||
+                                   tokens[pos].type == TokenType::LogicLessEqual)) {
+        std::string opr = tokens[pos].value;
         pos++;
-        ASTNode* right = parseTerm(tokens, pos);
-        node = new BinaryOpNode(op, node, right);
+        std::unique_ptr<ASTNode> right = parseTerm(tokens, pos);
+        node = std::make_unique<BinaryOpNode>(opr, std::move(node), std::move(right));
     }
 
     return node;
 }
 
-ASTNode* TreeGenerator::parseUnary(std::vector<Token> tokens, size_t& pos) {
-    if (pos < tokens.size() && 
-       (tokens[pos].type == TokenType::LogicNot || tokens[pos].type == TokenType::Minus)) {
-        std::string op = tokens[pos].value;
+std::unique_ptr<ASTNode> TreeGenerator::parseUnary(std::vector<Token> tokens, size_t& pos) {
+    if (pos < tokens.size() &&
+        (tokens[pos].type == TokenType::LogicNot || tokens[pos].type == TokenType::Minus)) {
+        std::string opr = tokens[pos].value;
         pos++;
-        ASTNode* operand = parseUnary(tokens, pos);
-        return new UnaryOpNode(op, operand);
+        std::unique_ptr<ASTNode> operand = parseUnary(tokens, pos);
+        return std::make_unique<UnaryOpNode>(opr, std::move(operand));
     }
     return parsePrimary(tokens, pos);
 }
 
-ASTNode* TreeGenerator::parsePrimary(std::vector<Token> tokens, size_t& pos) {
+std::unique_ptr<ASTNode> TreeGenerator::parsePrimary(std::vector<Token> tokens, size_t& pos) {
     if (tokens[pos].type == TokenType::Number) {
         long value = std::stol(tokens[pos].value);
         pos++;
-        return new NumberLiteralNode(value);
-    } else if (tokens[pos].type == TokenType::Char) {
+        return std::make_unique<NumberLiteralNode>(value);
+    }
+    if (tokens[pos].type == TokenType::Char) {
         char value = tokens[pos].value[0];
         pos++;
-        return new CharLiteralNode(value);
-    } else if (tokens[pos].type == TokenType::String) {
+        return std::make_unique<CharLiteralNode>(value);
+    }
+    if (tokens[pos].type == TokenType::String) {
         std::string value = tokens[pos].value;
         pos++;
-        return new StringLiteralNode(value);
-    } else if (tokens[pos].type == TokenType::Boolean) {
+        return std::make_unique<StringLiteralNode>(value);
+    }
+    if (tokens[pos].type == TokenType::Boolean) {
         bool value = tokens[pos].value == "true";
         pos++;
-        return new BooleanLiteralNode(value);
-    } else if (tokens[pos].type == TokenType::Identifier) {
+        return std::make_unique<BooleanLiteralNode>(value);
+    }
+    if (tokens[pos].type == TokenType::Identifier) {
         if (pos + 1 < tokens.size() && tokens[pos + 1].type == TokenType::LParen) {
             return parseFunctionCall(tokens, pos);
-        } else if (pos + 1 < tokens.size() && tokens[pos + 1].type == TokenType::LBracket) {
-            return parseArrayGet(tokens, pos);
-        } else if (pos + 1 < tokens.size() && tokens[pos + 1].type == TokenType::Dot) {
-            return parseMethodCall(tokens, pos);
-        } else {
-            std::string name = tokens[pos].value;
-            pos++;
-            return new IdentifierNode(name);
         }
-    } else if (tokens[pos].type == TokenType::LParen) {
+        if (pos + 1 < tokens.size() && tokens[pos + 1].type == TokenType::LBracket) {
+            return parseArrayGet(tokens, pos);
+        }
+        if (pos + 1 < tokens.size() && tokens[pos + 1].type == TokenType::Dot) {
+            return parseMethodCall(tokens, pos);
+        }
+
+        std::string name = tokens[pos].value;
         pos++;
-        ASTNode* expr = parseExpression(tokens, pos);
-        if (tokens[pos].type != TokenType::RParen)
-            throw std::runtime_error("Expected ')'");    
+        return std::make_unique<IdentifierNode>(name);
+    }
+    if (tokens[pos].type == TokenType::LParen) {
+        pos++;
+        std::unique_ptr<ASTNode> expr = parseExpression(tokens, pos);
+        if (tokens[pos].type != TokenType::RParen) {
+            throw std::runtime_error("Expected ')'");
+        }
         pos++;
         return expr;
-    } else if (tokens[pos].type == TokenType::LBrace) {
+    }
+    if (tokens[pos].type == TokenType::LBrace) {
         return parseArray(tokens, pos);
     }
 
     throw std::runtime_error("Unexpected token in factor: " + tokenStr(tokens[pos]));
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::vector<Token> TreeGenerator::tokenize(const std::string& input) {
     std::vector<Token> tokens;
     size_t pos = 0;
@@ -621,58 +674,64 @@ std::vector<Token> TreeGenerator::tokenize(const std::string& input) {
             continue;
         }
 
-        if (isspace(current)) {
+        if (isspace(current) != 0) {
             pos++;
             continue;
         }
 
         if (isAlpha(current)) {
             size_t start = pos;
-            while (pos < input.size() && isAlnum(input[pos])) pos++;
+            while (pos < input.size() && isAlnum(input[pos])) {
+                pos++;
+            }
 
             std::string word = input.substr(start, pos - start);
             if (word == "if") {
-                tokens.push_back({TokenType::KeywordIf, word});
+                tokens.emplace_back(TokenType::KeywordIf, word);
             } else if (word == "else") {
-                tokens.push_back({TokenType::KeywordElse, word});
+                tokens.emplace_back(TokenType::KeywordElse, word);
             } else if (word == "while") {
-                tokens.push_back({TokenType::KeywordWhile, word});
+                tokens.emplace_back(TokenType::KeywordWhile, word);
             } else if (word == "break") {
-                tokens.push_back({TokenType::KeywordBreak, word});
+                tokens.emplace_back(TokenType::KeywordBreak, word);
             } else if (word == "true" || word == "false") {
-                tokens.push_back({TokenType::Boolean, word});
+                tokens.emplace_back(TokenType::Boolean, word);
             } else if (word == "void") {
-                tokens.push_back({TokenType::KeywordVoid, word});
+                tokens.emplace_back(TokenType::KeywordVoid, word);
             } else if (word == "int") {
                 size_t tempPos = pos;
-                while (tempPos < input.size() && isspace(input[tempPos])) tempPos++;
+                while (tempPos < input.size() && isspace(input[tempPos]) != 0) {
+                    tempPos++;
+                }
 
                 if (tempPos < input.size() && input[tempPos] == '[') {
                     tempPos++;
-                    while (tempPos < input.size() && isspace(input[tempPos])) tempPos++;
+                    while (tempPos < input.size() && isspace(input[tempPos]) != 0) {
+                        tempPos++;
+                    }
 
                     if (tempPos < input.size() && input[tempPos] == ']') {
                         tempPos++;
                         pos = tempPos;
-                        tokens.push_back({TokenType::KeywordIntArr, "int[]"});
+                        tokens.emplace_back(TokenType::KeywordIntArr, "int[]");
                         continue;
                     }
                 }
 
-                tokens.push_back({TokenType::KeywordInt, word});
+                tokens.emplace_back(TokenType::KeywordInt, word);
                 continue;
             } else if (word == "uint") {
-                tokens.push_back({TokenType::KeywordUint, word});
+                tokens.emplace_back(TokenType::KeywordUint, word);
             } else if (word == "char") {
-                tokens.push_back({TokenType::KeywordChar, word});
+                tokens.emplace_back(TokenType::KeywordChar, word);
             } else if (word == "string") {
-                tokens.push_back({TokenType::KeywordString, word});
+                tokens.emplace_back(TokenType::KeywordString, word);
             } else if (word == "bool") {
-                tokens.push_back({TokenType::KeywordBool, word});
+                tokens.emplace_back(TokenType::KeywordBool, word);
             } else if (word == "return") {
-                tokens.push_back({TokenType::KeywordReturn, word});
+                tokens.emplace_back(TokenType::KeywordReturn, word);
             } else {
-                tokens.push_back({TokenType::Identifier, word});
+                tokens.emplace_back(TokenType::Identifier, word);
             }
 
             continue;
@@ -680,20 +739,24 @@ std::vector<Token> TreeGenerator::tokenize(const std::string& input) {
 
         if (isDigit(current)) {
             size_t start = pos;
-            while (pos < input.size() && isDigit(input[pos])) pos++;
-            tokens.push_back({TokenType::Number, input.substr(start, pos - start)});
+            while (pos < input.size() && isDigit(input[pos])) {
+                pos++;
+            }
+            tokens.emplace_back(TokenType::Number, input.substr(start, pos - start));
             continue;
         }
 
         if (current == '"') {
-            size_t start = ++pos;
+            pos++;
             std::string str;
 
-            while (pos < input.size() && input[pos] != '"') str += input[pos++];
+            while (pos < input.size() && input[pos] != '"') {
+                str += input[pos++];
+            }
 
             if (pos < input.size() && input[pos] == '"') {
                 pos++;
-                tokens.push_back({TokenType::String, str});
+                tokens.emplace_back(TokenType::String, str);
             } else {
                 throw std::runtime_error("Expected \"");
             }
@@ -704,16 +767,18 @@ std::vector<Token> TreeGenerator::tokenize(const std::string& input) {
         if (current == '\'') {
             pos++;
 
-            if (pos >= input.size())
+            if (pos >= input.size()) {
                 throw std::runtime_error("expected \'");
+            }
 
-            char char_value;
+            char char_value = 0;
 
             if (pos < input.size() && input[pos] == '\\') {
                 pos++;
 
-                if (pos >= input.size())
+                if (pos >= input.size()) {
                     throw std::runtime_error("incomplete char literal");
+                }
 
                 switch (input[pos]) {
                     case 'n':
@@ -729,142 +794,145 @@ std::vector<Token> TreeGenerator::tokenize(const std::string& input) {
                         char_value = '\'';
                         break;
                     default:
-                        throw std::runtime_error("unsuppoerted escapte-sequence: " + std::to_string(input[pos]));
+                        throw std::runtime_error("unsuppoerted escapte-sequence: " +
+                                                 std::to_string(input[pos]));
                 }
             } else {
-                if (pos >= input.size())
+                if (pos >= input.size()) {
                     throw std::runtime_error("incomplete char literal");
+                }
 
                 char_value = input[pos];
             }
             pos++;
 
-            if (pos >= input.size() || input[pos] != '\'')
+            if (pos >= input.size() || input[pos] != '\'') {
                 throw std::runtime_error("expected \'");
+            }
             pos++;
 
-            tokens.push_back({TokenType::Char, std::string(1, char_value)});
+            tokens.emplace_back(TokenType::Char, std::string(1, char_value));
             continue;
         }
 
         switch (current) {
             case '=':
                 if (pos + 1 < input.size() && input[pos + 1] == '=') {
-                    tokens.push_back({TokenType::LogicEqual, "=="});
+                    tokens.emplace_back(TokenType::LogicEqual, "==");
                     pos += 2;
                 } else {
-                    tokens.push_back({TokenType::Equals, "="});
+                    tokens.emplace_back(TokenType::Equals, "=");
                     pos++;
                 }
                 break;
             case ';':
-                tokens.push_back({TokenType::Semicolon, ";"});
+                tokens.emplace_back(TokenType::Semicolon, ";");
                 pos++;
                 break;
             case '.':
-                tokens.push_back({TokenType::Dot, "."});
+                tokens.emplace_back(TokenType::Dot, ".");
                 pos++;
                 break;
             case ',':
-                tokens.push_back({TokenType::Comma, ","});
+                tokens.emplace_back(TokenType::Comma, ",");
                 pos++;
                 break;
             case '(':
-                tokens.push_back({TokenType::LParen, "("});
+                tokens.emplace_back(TokenType::LParen, "(");
                 pos++;
                 break;
             case ')':
-                tokens.push_back({TokenType::RParen, ")"});
+                tokens.emplace_back(TokenType::RParen, ")");
                 pos++;
                 break;
             case '{':
-                tokens.push_back({TokenType::LBrace, "{"});
+                tokens.emplace_back(TokenType::LBrace, "{");
                 pos++;
                 break;
             case '}':
-                tokens.push_back({TokenType::RBrace, "}"});
+                tokens.emplace_back(TokenType::RBrace, "}");
                 pos++;
                 break;
             case '[':
-                tokens.push_back({TokenType::LBracket, "["});
+                tokens.emplace_back(TokenType::LBracket, "[");
                 pos++;
                 break;
             case ']':
-                tokens.push_back({TokenType::RBracket, "]"});
+                tokens.emplace_back(TokenType::RBracket, "]");
                 pos++;
                 break;
             case '!':
                 if (pos + 1 < input.size() && input[pos + 1] == '=') {
-                    tokens.push_back({TokenType::LogicNotEqual, "!="});
+                    tokens.emplace_back(TokenType::LogicNotEqual, "!=");
                     pos += 2;
                 } else {
-                    tokens.push_back({TokenType::LogicNot, "!"});
+                    tokens.emplace_back(TokenType::LogicNot, "!");
                     pos++;
                 }
                 break;
             case '+':
-                tokens.push_back({TokenType::Plus, "+"});
+                tokens.emplace_back(TokenType::Plus, "+");
                 pos++;
                 break;
             case '-':
-                tokens.push_back({TokenType::Minus, "-"});
+                tokens.emplace_back(TokenType::Minus, "-");
                 pos++;
                 break;
             case '*':
-                tokens.push_back({TokenType::Multiply, "*"});
+                tokens.emplace_back(TokenType::Multiply, "*");
                 pos++;
                 break;
             case '/':
-                tokens.push_back({TokenType::Divide, "/"});
+                tokens.emplace_back(TokenType::Divide, "/");
                 pos++;
                 break;
             case '%':
-                tokens.push_back({TokenType::Rem, "%"});
+                tokens.emplace_back(TokenType::Rem, "%");
                 pos++;
                 break;
             case '&':
                 if (pos + 1 < input.size() && input[pos + 1] == '&') {
-                    tokens.push_back({TokenType::LogicAnd, "&&"});
+                    tokens.emplace_back(TokenType::LogicAnd, "&&");
                     pos += 2;
                 } else {
-                    tokens.push_back({TokenType::Unknown, "&"});
+                    tokens.emplace_back(TokenType::Unknown, "&");
                     pos++;
                 }
                 break;
             case '|':
                 if (pos + 1 < input.size() && input[pos + 1] == '|') {
-                    tokens.push_back({TokenType::LogicOr, "||"});
+                    tokens.emplace_back(TokenType::LogicOr, "||");
                     pos += 2;
                 } else {
-                    tokens.push_back({TokenType::Unknown, "|"});
+                    tokens.emplace_back(TokenType::Unknown, "|");
                     pos++;
                 }
                 break;
             case '>':
                 if (pos + 1 < input.size() && input[pos + 1] == '=') {
-                    tokens.push_back({TokenType::LogicGreaterEqual, ">="});
+                    tokens.emplace_back(TokenType::LogicGreaterEqual, ">=");
                     pos += 2;
                 } else {
-                    tokens.push_back({TokenType::LogicGreater, ">"});
+                    tokens.emplace_back(TokenType::LogicGreater, ">");
                     pos++;
                 }
                 break;
             case '<':
                 if (pos + 1 < input.size() && input[pos + 1] == '=') {
-                    tokens.push_back({TokenType::LogicLessEqual, "<="});
+                    tokens.emplace_back(TokenType::LogicLessEqual, "<=");
                     pos += 2;
                 } else {
-                    tokens.push_back({TokenType::LogicLess, "<"});
+                    tokens.emplace_back(TokenType::LogicLess, "<");
                     pos++;
                 }
                 break;
             default:
-                tokens.push_back({TokenType::Unknown, std::string(1, current)});
+                tokens.emplace_back(TokenType::Unknown, std::string(1, current));
                 pos++;
                 break;
         }
     }
 
-    tokens.push_back({TokenType::EndOfFile, ""});
+    tokens.emplace_back(TokenType::EndOfFile, "");
     return tokens;
 }
